@@ -1,0 +1,2 @@
+//Laser On
+PsoOutputOn(GX)
