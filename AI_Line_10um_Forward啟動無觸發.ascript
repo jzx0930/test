@@ -1,0 +1,1085 @@
+
+
+program
+
+G90
+G71
+G76
+
+G16 X Y Z
+G17
+
+' Root Group
+
+' Layer 0
+
+' Shape 89
+' Custom Tool (Initialization)
+//流程開始時執行一次的程式碼
+#define ShapeFeedrate 30 			//G0速度
+#define CoordinatedMotionTransitionFeedrate 30  //G1速度
+
+#define X_Start 185 //X加工起點
+#define Y_Start 89  //Y加工起點
+#define PulseCount 1
+#define PulseTime 1.8 //PulseTime單位:us
+#define DistanceThreshold 0.002 //DistanceThreshold單位:mm 。XY平台最小解析度為0.1um
+
+var $numberOfSteps as integer
+var $currentStep as integer
+$numberOfSteps=1 //迴圈次數
+
+// -------------------------
+//  X/Y 軸基本設定
+// -------------------------
+SetupAxisRampType([X,Y],RampType.Sine)
+SetupAxisRampValue([X,Y],RampMode.Rate,200/1.57)	//G0加速度(units/sec²)。
+//SetupAxisRampValue([X,Y],RampMode.Rate,100000/1.57)   // 正方形
+SetupAxisSpeed([X,Y],[20,20])
+
+SetupCoordinatedRampType(RampType.Sine)
+SetupCoordinatedRampValue(RampMode.Rate,200/1.57)	//G1加速度(units/sec²)。
+//SetupCoordinatedRampValue(RampMode.Rate,ShapeFeedrate*1/1.57)//正方形
+SetupCoordinatedSpeed(ShapeFeedrate)
+
+SetupTaskDistanceUnits(DistanceUnits.Primary)
+SetupTaskTimeUnits(TimeUnits.Seconds)
+SetupTaskTargetMode(TargetMode.Absolute)
+SetupTaskWaitMode(WaitMode.MotionDone)
+
+// -------------------------
+//  Encoder Echo（X/Y → GX）
+// -------------------------
+var $outputDivider as integer = 1
+
+DriveEncoderOutputConfigureDirection(X,EncoderOutputChannel.SyncPortA,0)
+DriveEncoderOutputConfigureDivider(X,EncoderOutputChannel.SyncPortA,$outputDivider)
+DriveEncoderOutputConfigureInput(X,EncoderOutputChannel.SyncPortA,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(X,EncoderOutputChannel.SyncPortA,EncoderOutputMode.Default)
+
+DriveEncoderOutputConfigureDirection(Y,EncoderOutputChannel.SyncPortB,0)
+DriveEncoderOutputConfigureDivider(Y,EncoderOutputChannel.SyncPortB,$outputDivider)
+DriveEncoderOutputConfigureInput(Y,EncoderOutputChannel.SyncPortB,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(Y,EncoderOutputChannel.SyncPortB,EncoderOutputMode.Default)
+
+
+// -------------------------
+//  PSO 設定
+// -------------------------
+PsoReset(GX)
+
+// 依距離觸發
+PsoDistanceConfigureCounterReset(GX,PsoDistanceCounterResetMask.ResetWhenOutputOff)
+PsoDistanceConfigureInputs(GX,[PsoDistanceInput.GL4SyncPortB,PsoDistanceInput.GL4SyncPortA])
+PsoDistanceConfigureFixedDistance(GX,Trunc(UnitsToCounts(GX,DistanceThreshold)/ParameterGetAxisValue(GX,AxisParameter.PrimaryEmulatedQuadratureDivider)))//單位mm 移動1000um =1mm  500um=0.5mm  0.05mm=50um 0.002mm=2um
+
+
+// 脈衝波型
+/*The time in microseconds
+雷射重複頻率=400kHz
+=1/400000=0.0000025s=2.5us(得出2.5us=1發)
+所以100us=40發
+*/
+PsoWaveformConfigureMode(GX,PsoWaveformMode.Pulse)
+PsoWaveformConfigurePulseFixedCount(GX, PulseCount)
+PsoWaveformConfigurePulseFixedOnTime(GX, PulseTime) //每一個脈衝的高電位時間 1s=1000ms=1000000us
+PsoWaveformConfigurePulseFixedTotalTime(GX, PulseTime)
+PsoWaveformApplyPulseConfiguration(GX)
+PsoWaveformOn(GX)
+
+// 實體輸出腳位
+PsoOutputConfigureOutput(GX,PsoOutputPin.GL4LaserOutput0)
+PsoOutputConfigureSource(GX,PsoOutputSource.Waveform)
+
+//VelocityBlendingOff()
+//VelocityBlendingOn()
+// -------------------------
+//  運動
+// -------------------------
+//AppDataCollectionStop()蒐集資料
+//AppDataCollectionSnapshot()
+//----------------
+
+//以下為加工路徑運行
+for $currentStep = 1 to $numberOfSteps
+	G82
+	
+	PsoDistanceCounterOff(GX)
+	PsoDistanceEventsOff(GX)
+	MoveLinear([X,Y],[X_Start,Y_Start],300)
+	
+	G92 X0 Y0     ; 將目前位置設定為 (0,0)
+	
+	G0 X 9.5235 Y 35.1884
+	F ShapeFeedrate
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.6015 Y 33.8777
+	G1 X 9.6015 Y 28.1579
+	G2 X 5.4608 Y 18.1575 I -14.1463 J 0.0000
+	G3 X 1.0204 Y 6.7510 I 12.4305 J -11.4065
+	G1 X 1.0204 Y 1.1285
+	G2 X 1.0039 Y 1.0543 I -0.1748 J 0.0000
+	G1 X 1.0039 Y 0.9921
+	G2 X 0.6872 Y 0.9921 I -0.1583 J 0.0000
+	G1 X 0.6872 Y 1.0543
+	G2 X 0.6707 Y 1.1285 I 0.1583 J 0.0742
+	G1 X 0.6707 Y 6.7510
+	G2 X 5.2109 Y 18.4022 I 17.2205 J -0.0002
+	G3 X 9.2519 Y 28.1579 I -9.7556 J 9.7557
+	G1 X 9.2519 Y 33.8725
+	G1 X 9.1747 Y 35.1635
+	G1 X 9.1393 Y 35.4976
+	G1 X 9.0268 Y 36.3289
+	G1 X 8.8434 Y 37.5077
+	G1 X 8.7219 Y 38.3506
+	G1 X 8.6757 Y 38.7174
+	G1 X 8.6226 Y 39.3100
+	G1 X 8.5991 Y 39.6691
+	G1 X 8.5729 Y 40.6722
+	G1 X 8.5729 Y 55.3651
+	G2 X 10.3243 Y 59.5935 I 5.9802 J -0.0001
+	G1 X 10.4777 Y 59.7469
+	G3 X 11.4431 Y 62.0778 I -2.3311 J 2.3309
+	G1 X 11.4431 Y 71.9480
+	G2 X 16.8796 Y 77.3844 I 5.4364 J 0.0000
+	G1 X 17.0265 Y 77.3844
+	G1 X 17.0265 Y 77.5991
+	G1 X 17.2890 Y 77.5991
+	G2 X 17.6726 Y 77.1419 I 0.0001 J -0.3894
+	G1 X 17.6552 Y 77.0771
+	G2 X 17.2890 Y 76.8201 I -0.3662 J 0.1324
+	G1 X 17.0265 Y 76.8201
+	G1 X 17.0265 Y 77.0348
+	G1 X 16.8796 Y 77.0348
+	G3 X 11.7928 Y 71.9480 I 0.0000 J -5.0868
+	G1 X 11.7928 Y 62.0778
+	G2 X 10.7249 Y 59.4996 I -3.6462 J 0.0000
+	G1 X 10.5716 Y 59.3463
+	G3 X 8.9226 Y 55.3651 I 3.9816 J -3.9812
+	G1 X 8.9226 Y 40.6745
+	G1 X 8.9486 Y 39.6817
+	G1 X 8.9714 Y 39.3350
+	G1 X 9.0237 Y 38.7519
+	G1 X 9.0686 Y 38.3959
+	G1 X 9.1893 Y 37.5593
+	G1 X 9.3731 Y 36.3775
+	G1 X 9.4868 Y 35.5370
+	G1 X 9.5235 Y 35.1884
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 141
+	G0 X 9.5320 Y 35.1889
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.6100 Y 33.8777
+	G1 X 9.6100 Y 28.1579
+	G2 X 5.4669 Y 18.1517 I -14.1548 J 0.0000
+	G3 X 1.0289 Y 6.7510 I 12.4243 J -11.4006
+	G1 X 1.0289 Y 1.1285
+	G2 X 1.0123 Y 1.0524 I -0.1832 J 0.0000
+	G1 X 1.0123 Y 0.9921
+	G2 X 0.6788 Y 0.9921 I -0.1668 J 0.0000
+	G1 X 0.6788 Y 1.0524
+	G2 X 0.6623 Y 1.1285 I 0.1667 J 0.0761
+	G1 X 0.6623 Y 6.7510
+	G2 X 5.2050 Y 18.4082 I 17.2289 J -0.0002
+	G3 X 9.2434 Y 28.1579 I -9.7497 J 9.7497
+	G1 X 9.2434 Y 33.8722
+	G1 X 9.1662 Y 35.1628
+	G1 X 9.1309 Y 35.4966
+	G1 X 9.0184 Y 36.3277
+	G1 X 8.8351 Y 37.5065
+	G1 X 8.7135 Y 38.3496
+	G1 X 8.6673 Y 38.7166
+	G1 X 8.6141 Y 39.3094
+	G1 X 8.5907 Y 39.6689
+	G1 X 8.5645 Y 40.6722
+	G1 X 8.5645 Y 55.3651
+	G2 X 10.3182 Y 59.5994 I 5.9887 J -0.0001
+	G1 X 10.4718 Y 59.7529
+	G3 X 11.4347 Y 62.0778 I -2.3252 J 2.3249
+	G1 X 11.4347 Y 71.9480
+	G2 X 16.8796 Y 77.3929 I 5.4449 J 0.0000
+	G1 X 17.0181 Y 77.3929
+	G1 X 17.0181 Y 77.6075
+	G1 X 17.2890 Y 77.6075
+	G2 X 17.6808 Y 77.1398 I 0.0001 J -0.3979
+	G1 X 17.6631 Y 77.0741
+	G2 X 17.2890 Y 76.8117 I -0.3741 J 0.1354
+	G1 X 17.0181 Y 76.8117
+	G1 X 17.0181 Y 77.0263
+	G1 X 16.8796 Y 77.0263
+	G3 X 11.8013 Y 71.9480 I 0.0000 J -5.0783
+	G1 X 11.8013 Y 62.0778
+	G2 X 10.7310 Y 59.4937 I -3.6547 J 0.0000
+	G1 X 10.5775 Y 59.3402
+	G3 X 8.9311 Y 55.3651 I 3.9757 J -3.9752
+	G1 X 8.9311 Y 40.6746
+	G1 X 8.9571 Y 39.6821
+	G1 X 8.9798 Y 39.3356
+	G1 X 9.0321 Y 38.7528
+	G1 X 9.0770 Y 38.3970
+	G1 X 9.1977 Y 37.5605
+	G1 X 9.3815 Y 36.3786
+	G1 X 9.4952 Y 35.5379
+	G1 X 9.5320 Y 35.1889
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 193
+	G0 X 9.5404 Y 35.1894
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.6185 Y 33.8777
+	G1 X 9.6185 Y 28.1579
+	G2 X 5.4730 Y 18.1458 I -14.1633 J 0.0000
+	G3 X 1.0373 Y 6.7510 I 12.4182 J -11.3948
+	G1 X 1.0373 Y 1.1285
+	G2 X 1.0208 Y 1.0506 I -0.1917 J 0.0000
+	G1 X 1.0208 Y 0.9921
+	G2 X 0.6703 Y 0.9921 I -0.1752 J 0.0000
+	G1 X 0.6703 Y 1.0506
+	G2 X 0.6538 Y 1.1285 I 0.1752 J 0.0779
+	G1 X 0.6538 Y 6.7510
+	G2 X 5.1990 Y 18.4143 I 17.2373 J -0.0002
+	G3 X 9.2349 Y 28.1579 I -9.7438 J 9.7437
+	G1 X 9.2349 Y 33.8720
+	G1 X 9.1578 Y 35.1621
+	G1 X 9.1225 Y 35.4956
+	G1 X 9.0101 Y 36.3265
+	G1 X 8.8267 Y 37.5053
+	G1 X 8.7051 Y 38.3485
+	G1 X 8.6589 Y 38.7159
+	G1 X 8.6057 Y 39.3089
+	G1 X 8.5822 Y 39.6687
+	G1 X 8.5560 Y 40.6722
+	G1 X 8.5560 Y 55.3651
+	G2 X 10.3122 Y 59.6053 I 5.9972 J -0.0001
+	G1 X 10.4659 Y 59.7590
+	G3 X 11.4262 Y 62.0778 I -2.3193 J 2.3188
+	G1 X 11.4262 Y 71.9480
+	G2 X 16.8796 Y 77.4014 I 5.4534 J 0.0000
+	G1 X 17.0096 Y 77.4014
+	G1 X 17.0096 Y 77.6160
+	G1 X 17.2890 Y 77.6160
+	G2 X 17.6889 Y 77.1376 I 0.0001 J -0.4063
+	G1 X 17.6711 Y 77.0712
+	G2 X 17.2890 Y 76.8032 I -0.3820 J 0.1383
+	G1 X 17.0096 Y 76.8032
+	G1 X 17.0096 Y 77.0178
+	G1 X 16.8796 Y 77.0178
+	G3 X 11.8097 Y 71.9480 I 0.0000 J -5.0698
+	G1 X 11.8097 Y 62.0778
+	G2 X 10.7371 Y 59.4878 I -3.6632 J 0.0000
+	G1 X 10.5834 Y 59.3341
+	G3 X 8.9395 Y 55.3651 I 3.9698 J -3.9691
+	G1 X 8.9395 Y 40.6747
+	G1 X 8.9655 Y 39.6825
+	G1 X 8.9882 Y 39.3363
+	G1 X 9.0406 Y 38.7537
+	G1 X 9.0854 Y 38.3982
+	G1 X 9.2061 Y 37.5618
+	G1 X 9.3899 Y 36.3798
+	G1 X 9.5036 Y 35.5388
+	G1 X 9.5404 Y 35.1894
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 245
+	G0 X 9.5489 Y 35.1899
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.6269 Y 33.8777
+	G1 X 9.6269 Y 28.1579
+	G2 X 5.4791 Y 18.1399 I -14.1718 J 0.0001
+	G3 X 1.0458 Y 6.7510 I 12.4122 J -11.3889
+	G1 X 1.0458 Y 1.1285
+	G2 X 1.0293 Y 1.0488 I -0.2002 J 0.0000
+	G1 X 1.0293 Y 0.9921
+	G2 X 0.6619 Y 0.9921 I -0.1837 J 0.0000
+	G1 X 0.6619 Y 1.0488
+	G2 X 0.6453 Y 1.1285 I 0.1836 J 0.0796
+	G1 X 0.6453 Y 6.7510
+	G2 X 5.1931 Y 18.4203 I 17.2458 J -0.0002
+	G3 X 9.2265 Y 28.1579 I -9.7379 J 9.7376
+	G1 X 9.2265 Y 33.8717
+	G1 X 9.1494 Y 35.1614
+	G1 X 9.1141 Y 35.4946
+	G1 X 9.0017 Y 36.3253
+	G1 X 8.8183 Y 37.5041
+	G1 X 8.6967 Y 38.3475
+	G1 X 8.6504 Y 38.7151
+	G1 X 8.5972 Y 39.3083
+	G1 X 8.5738 Y 39.6685
+	G1 X 8.5475 Y 40.6722
+	G1 X 8.5475 Y 55.3651
+	G2 X 10.3061 Y 59.6112 I 6.0056 J -0.0001
+	G1 X 10.4599 Y 59.7650
+	G3 X 11.4177 Y 62.0778 I -2.3133 J 2.3128
+	G1 X 11.4177 Y 71.9480
+	G2 X 16.8796 Y 77.4098 I 5.4618 J 0.0000
+	G1 X 17.0012 Y 77.4098
+	G1 X 17.0012 Y 77.6245
+	G1 X 17.2890 Y 77.6245
+	G2 X 17.6971 Y 77.1354 I 0.0001 J -0.4148
+	G1 X 17.6791 Y 77.0683
+	G2 X 17.2890 Y 76.7947 I -0.3900 J 0.1412
+	G1 X 17.0012 Y 76.7947
+	G1 X 17.0012 Y 77.0094
+	G1 X 16.8796 Y 77.0094
+	G3 X 11.8182 Y 71.9480 I 0.0000 J -5.0614
+	G1 X 11.8182 Y 62.0778
+	G2 X 10.7431 Y 59.4818 I -3.6716 J 0.0000
+	G1 X 10.5893 Y 59.3280
+	G3 X 8.9480 Y 55.3651 I 3.9639 J -3.9630
+	G1 X 8.9480 Y 40.6748
+	G1 X 8.9740 Y 39.6829
+	G1 X 8.9967 Y 39.3369
+	G1 X 9.0490 Y 38.7546
+	G1 X 9.0938 Y 38.3993
+	G1 X 9.2144 Y 37.5631
+	G1 X 9.3983 Y 36.3809
+	G1 X 9.5120 Y 35.5397
+	G1 X 9.5489 Y 35.1899
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 297
+	G0 X 9.5204 Y 35.5406
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.5573 Y 35.1904
+	G1 X 9.6354 Y 33.8777
+	G1 X 9.6354 Y 28.1579
+	G2 X 5.4852 Y 18.1341 I -14.1802 J 0.0000
+	G3 X 1.0543 Y 6.7510 I 12.4061 J -11.3830
+	G1 X 1.0543 Y 1.1285
+	G2 X 1.0377 Y 1.0471 I -0.2086 J 0.0000
+	G1 X 1.0377 Y 0.9921
+	G2 X 0.6534 Y 0.9921 I -0.1922 J 0.0000
+	G1 X 0.6534 Y 1.0471
+	G2 X 0.6369 Y 1.1285 I 0.1921 J 0.0814
+	G1 X 0.6369 Y 6.7510
+	G2 X 5.1872 Y 18.4264 I 17.2543 J -0.0003
+	G3 X 9.2180 Y 28.1579 I -9.7320 J 9.7315
+	G1 X 9.2180 Y 33.8715
+	G1 X 9.1409 Y 35.1607
+	G1 X 9.1057 Y 35.4936
+	G1 X 8.9933 Y 36.3241
+	G1 X 8.8099 Y 37.5029
+	G1 X 8.6883 Y 38.3464
+	G1 X 8.6420 Y 38.7144
+	G1 X 8.5888 Y 39.3078
+	G1 X 8.5653 Y 39.6683
+	G1 X 8.5391 Y 40.6722
+	G1 X 8.5391 Y 55.3651
+	G2 X 10.3001 Y 59.6172 I 6.0141 J -0.0001
+	G1 X 10.4539 Y 59.7710
+	G3 X 11.4093 Y 62.0778 I -2.3073 J 2.3068
+	G1 X 11.4093 Y 71.9480
+	G2 X 16.8796 Y 77.4183 I 5.4703 J 0.0000
+	G1 X 16.9927 Y 77.4183
+	G1 X 16.9927 Y 77.6329
+	G1 X 17.2890 Y 77.6329
+	G2 X 17.7053 Y 77.1332 I 0.0001 J -0.4232
+	G1 X 17.6870 Y 77.0654
+	G2 X 17.2890 Y 76.7863 I -0.3979 J 0.1441
+	G1 X 16.9927 Y 76.7863
+	G1 X 16.9927 Y 77.0009
+	G1 X 16.8796 Y 77.0009
+	G3 X 11.8267 Y 71.9480 I 0.0000 J -5.0529
+	G1 X 11.8267 Y 62.0778
+	G2 X 10.7490 Y 59.4758 I -3.6801 J 0.0000
+	G1 X 10.5953 Y 59.3221
+	G3 X 8.9565 Y 55.3651 I 3.9579 J -3.9570
+	G1 X 8.9565 Y 40.6749
+	G1 X 8.9824 Y 39.6833
+	G1 X 9.0051 Y 39.3376
+	G1 X 9.0574 Y 38.7556
+	G1 X 9.1022 Y 38.4004
+	G1 X 9.2228 Y 37.5643
+	G1 X 9.4067 Y 36.3820
+	G1 X 9.5204 Y 35.5406
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 349
+	G0 X 9.5289 Y 35.5415
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.5658 Y 35.1909
+	G1 X 9.6439 Y 33.8777
+	G1 X 9.6439 Y 28.1579
+	G2 X 5.4913 Y 18.1282 I -14.1886 J 0.0000
+	G3 X 1.0627 Y 6.7510 I 12.4000 J -11.3772
+	G1 X 1.0627 Y 1.1285
+	G2 X 1.0462 Y 1.0454 I -0.2171 J 0.0000
+	G1 X 1.0462 Y 0.9921
+	G2 X 0.6449 Y 0.9921 I -0.2006 J 0.0000
+	G1 X 0.6449 Y 1.0454
+	G2 X 0.6284 Y 1.1285 I 0.2006 J 0.0831
+	G1 X 0.6284 Y 6.7510
+	G2 X 5.1813 Y 18.4324 I 17.2627 J -0.0003
+	G3 X 9.2095 Y 28.1579 I -9.7261 J 9.7255
+	G1 X 9.2095 Y 33.8712
+	G1 X 9.1325 Y 35.1600
+	G1 X 9.0973 Y 35.4925
+	G1 X 8.9849 Y 36.3229
+	G1 X 8.8016 Y 37.5017
+	G1 X 8.6799 Y 38.3453
+	G1 X 8.6336 Y 38.7136
+	G1 X 8.5803 Y 39.3072
+	G1 X 8.5568 Y 39.6680
+	G1 X 8.5306 Y 40.6722
+	G1 X 8.5306 Y 55.3651
+	G2 X 10.2941 Y 59.6232 I 6.0225 J -0.0001
+	G1 X 10.4479 Y 59.7770
+	G3 X 11.4008 Y 62.0778 I -2.3013 J 2.3008
+	G1 X 11.4008 Y 71.9480
+	G2 X 16.8796 Y 77.4268 I 5.4788 J 0.0000
+	G1 X 16.9842 Y 77.4268
+	G1 X 16.9842 Y 77.6414
+	G1 X 17.2890 Y 77.6414
+	G2 X 17.7135 Y 77.1310 I 0.0001 J -0.4317
+	G1 X 17.6950 Y 77.0625
+	G2 X 17.2890 Y 76.7778 I -0.4059 J 0.1469
+	G1 X 16.9842 Y 76.7778
+	G1 X 16.9842 Y 76.9924
+	G1 X 16.8796 Y 76.9924
+	G3 X 11.8351 Y 71.9480 I 0.0000 J -5.0444
+	G1 X 11.8351 Y 62.0778
+	G2 X 10.7550 Y 59.4699 I -3.6886 J 0.0000
+	G1 X 10.6012 Y 59.3161
+	G3 X 8.9649 Y 55.3651 I 3.9519 J -3.9510
+	G1 X 8.9649 Y 40.6750
+	G1 X 8.9909 Y 39.6837
+	G1 X 9.0136 Y 39.3382
+	G1 X 9.0658 Y 38.7565
+	G1 X 9.1106 Y 38.4016
+	G1 X 9.2312 Y 37.5656
+	G1 X 9.4151 Y 36.3832
+	G1 X 9.5289 Y 35.5415
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 401
+	G0 X 9.5373 Y 35.5423
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.5742 Y 35.1914
+	G1 X 9.6523 Y 33.8777
+	G1 X 9.6523 Y 28.1579
+	G2 X 5.4974 Y 18.1223 I -14.1971 J 0.0000
+	G3 X 1.0712 Y 6.7510 I 12.3939 J -11.3713
+	G1 X 1.0712 Y 1.1285
+	G2 X 1.0547 Y 1.0437 I -0.2256 J 0.0000
+	G1 X 1.0547 Y 0.9921
+	G2 X 0.6365 Y 0.9921 I -0.2091 J 0.0000
+	G1 X 0.6365 Y 1.0437
+	G2 X 0.6199 Y 1.1285 I 0.2090 J 0.0847
+	G1 X 0.6199 Y 6.7510
+	G2 X 5.1753 Y 18.4385 I 17.2712 J -0.0003
+	G3 X 9.2011 Y 28.1579 I -9.7201 J 9.7194
+	G1 X 9.2011 Y 33.8710
+	G1 X 9.1241 Y 35.1593
+	G1 X 9.0889 Y 35.4915
+	G1 X 8.9766 Y 36.3216
+	G1 X 8.7932 Y 37.5005
+	G1 X 8.6715 Y 38.3443
+	G1 X 8.6252 Y 38.7128
+	G1 X 8.5719 Y 39.3067
+	G1 X 8.5484 Y 39.6678
+	G1 X 8.5221 Y 40.6722
+	G1 X 8.5221 Y 55.3651
+	G2 X 10.2881 Y 59.6292 I 6.0310 J -0.0001
+	G1 X 10.4419 Y 59.7829
+	G3 X 11.3923 Y 62.0778 I -2.2953 J 2.2949
+	G1 X 11.3923 Y 71.9480
+	G2 X 16.8796 Y 77.4352 I 5.4872 J 0.0000
+	G1 X 16.9758 Y 77.4352
+	G1 X 16.9758 Y 77.6498
+	G1 X 17.2890 Y 77.6498
+	G2 X 17.7216 Y 77.1287 I 0.0000 J -0.4401
+	G1 X 17.7029 Y 77.0597
+	G2 X 17.2890 Y 76.7693 I -0.4139 J 0.1498
+	G1 X 16.9758 Y 76.7693
+	G1 X 16.9758 Y 76.9840
+	G1 X 16.8796 Y 76.9840
+	G3 X 11.8436 Y 71.9480 I 0.0000 J -5.0360
+	G1 X 11.8436 Y 62.0778
+	G2 X 10.7610 Y 59.4639 I -3.6970 J 0.0000
+	G1 X 10.6072 Y 59.3101
+	G3 X 8.9734 Y 55.3651 I 3.9459 J -3.9451
+	G1 X 8.9734 Y 40.6752
+	G1 X 8.9994 Y 39.6841
+	G1 X 9.0220 Y 39.3389
+	G1 X 9.0742 Y 38.7574
+	G1 X 9.1189 Y 38.4027
+	G1 X 9.2395 Y 37.5668
+	G1 X 9.4234 Y 36.3843
+	G1 X 9.5373 Y 35.5423
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 453
+	G0 X 9.4318 Y 36.3854
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.5457 Y 35.5432
+	G1 X 9.5827 Y 35.1919
+	G1 X 9.6608 Y 33.8777
+	G1 X 9.6608 Y 28.1579
+	G2 X 5.5035 Y 18.1165 I -14.2056 J 0.0000
+	G3 X 1.0797 Y 6.7510 I 12.3877 J -11.3654
+	G1 X 1.0797 Y 1.1285
+	G2 X 1.0631 Y 1.0421 I -0.2340 J 0.0000
+	G1 X 1.0631 Y 0.9921
+	G2 X 0.6280 Y 0.9921 I -0.2176 J 0.0000
+	G1 X 0.6280 Y 1.0421
+	G2 X 0.6115 Y 1.1285 I 0.2175 J 0.0864
+	G1 X 0.6115 Y 6.7510
+	G2 X 5.1694 Y 18.4445 I 17.2797 J -0.0003
+	G3 X 9.1926 Y 28.1579 I -9.7142 J 9.7134
+	G1 X 9.1926 Y 33.8707
+	G1 X 9.1156 Y 35.1586
+	G1 X 9.0805 Y 35.4905
+	G1 X 8.9682 Y 36.3204
+	G1 X 8.7848 Y 37.4993
+	G1 X 8.6631 Y 38.3432
+	G1 X 8.6167 Y 38.7121
+	G1 X 8.5634 Y 39.3061
+	G1 X 8.5399 Y 39.6676
+	G1 X 8.5137 Y 40.6722
+	G1 X 8.5137 Y 55.3651
+	G2 X 10.2821 Y 59.6351 I 6.0395 J 0.0000
+	G1 X 10.4359 Y 59.7889
+	G3 X 11.3839 Y 62.0778 I -2.2894 J 2.2889
+	G1 X 11.3839 Y 71.9480
+	G2 X 16.9673 Y 77.4437 I 5.4960 J 0.0004
+	G1 X 16.9673 Y 77.6583
+	G1 X 17.2890 Y 77.6583
+	G2 X 17.7298 Y 77.1265 I 0.0000 J -0.4486
+	G1 X 17.7109 Y 77.0568
+	G2 X 17.2890 Y 76.7609 I -0.4218 J 0.1527
+	G1 X 16.9673 Y 76.7609
+	G1 X 16.9673 Y 76.9755
+	G1 X 16.8796 Y 76.9755
+	G3 X 11.8521 Y 71.9480 I 0.0000 J -5.0275
+	G1 X 11.8521 Y 62.0778
+	G2 X 10.7670 Y 59.4579 I -3.7055 J 0.0000
+	G1 X 10.6132 Y 59.3041
+	G3 X 8.9819 Y 55.3651 I 3.9399 J -3.9391
+	G1 X 8.9819 Y 40.6753
+	G1 X 9.0078 Y 39.6845
+	G1 X 9.0304 Y 39.3396
+	G1 X 9.0826 Y 38.7583
+	G1 X 9.1273 Y 38.4038
+	G1 X 9.2479 Y 37.5681
+	G1 X 9.4318 Y 36.3854
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 504
+	G0 X 9.2563 Y 37.5693
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.4402 Y 36.3866
+	G1 X 9.5541 Y 35.5441
+	G1 X 9.5911 Y 35.1924
+	G1 X 9.6693 Y 33.8777
+	G1 X 9.6693 Y 28.1579
+	G2 X 5.5096 Y 18.1106 I -14.2141 J 0.0001
+	G3 X 1.0881 Y 6.7510 I 12.3816 J -11.3596
+	G1 X 1.0881 Y 1.1285
+	G2 X 1.0716 Y 1.0405 I -0.2425 J 0.0000
+	G1 X 1.0716 Y 0.9921
+	G2 X 0.6195 Y 0.9921 I -0.2260 J 0.0000
+	G1 X 0.6195 Y 1.0405
+	G2 X 0.6030 Y 1.1285 I 0.2260 J 0.0880
+	G1 X 0.6030 Y 6.7510
+	G2 X 5.1635 Y 18.4506 I 17.2881 J -0.0003
+	G3 X 9.1841 Y 28.1579 I -9.7083 J 9.7074
+	G1 X 9.1841 Y 33.8705
+	G1 X 9.1072 Y 35.1579
+	G1 X 9.0721 Y 35.4895
+	G1 X 8.9598 Y 36.3192
+	G1 X 8.7764 Y 37.4981
+	G1 X 8.6547 Y 38.3422
+	G1 X 8.6083 Y 38.7113
+	G1 X 8.5550 Y 39.3056
+	G1 X 8.5314 Y 39.6674
+	G1 X 8.5052 Y 40.6722
+	G1 X 8.5052 Y 55.3651
+	G2 X 10.2761 Y 59.6411 I 6.0479 J 0.0000
+	G1 X 10.4299 Y 59.7949
+	G3 X 11.3754 Y 62.0778 I -2.2834 J 2.2829
+	G1 X 11.3754 Y 71.9480
+	G2 X 16.9588 Y 77.4523 I 5.5045 J 0.0004
+	G1 X 16.9588 Y 77.6668
+	G1 X 17.2890 Y 77.6668
+	G2 X 17.7380 Y 77.1243 I 0.0000 J -0.4570
+	G1 X 17.7189 Y 77.0539
+	G2 X 17.2890 Y 76.7524 I -0.4298 J 0.1556
+	G1 X 16.9588 Y 76.7524
+	G1 X 16.9588 Y 76.9670
+	G3 X 11.8605 Y 71.9480 I -0.0790 J -5.0187
+	G1 X 11.8605 Y 62.0778
+	G2 X 10.7730 Y 59.4519 I -3.7140 J 0.0000
+	G1 X 10.6192 Y 59.2981
+	G3 X 8.9903 Y 55.3651 I 3.9339 J -3.9331
+	G1 X 8.9903 Y 40.6754
+	G1 X 9.0163 Y 39.6848
+	G1 X 9.0389 Y 39.3402
+	G1 X 9.0911 Y 38.7592
+	G1 X 9.1357 Y 38.4050
+	G1 X 9.2563 Y 37.5693
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 554
+	G0 X 9.2647 Y 37.5706
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.4486 Y 36.3877
+	G1 X 9.5625 Y 35.5450
+	G1 X 9.5996 Y 35.1929
+	G1 X 9.6777 Y 33.8777
+	G1 X 9.6777 Y 28.1579
+	G2 X 5.5158 Y 18.1048 I -14.2225 J 0.0000
+	G3 X 1.0966 Y 6.7510 I 12.3755 J -11.3537
+	G1 X 1.0966 Y 1.1285
+	G2 X 1.0801 Y 1.0389 I -0.2510 J 0.0000
+	G1 X 1.0801 Y 0.9921
+	G2 X 0.6111 Y 0.9921 I -0.2345 J 0.0000
+	G1 X 0.6111 Y 1.0389
+	G2 X 0.5945 Y 1.1285 I 0.2344 J 0.0896
+	G1 X 0.5945 Y 6.7510
+	G2 X 5.1576 Y 18.4566 I 17.2965 J -0.0003
+	G3 X 9.1757 Y 28.1579 I -9.7023 J 9.7013
+	G1 X 9.1757 Y 33.8702
+	G1 X 9.0987 Y 35.1572
+	G1 X 9.0637 Y 35.4885
+	G1 X 8.9514 Y 36.3180
+	G1 X 8.7681 Y 37.4969
+	G1 X 8.6463 Y 38.3411
+	G1 X 8.5999 Y 38.7106
+	G1 X 8.5465 Y 39.3050
+	G1 X 8.5230 Y 39.6672
+	G1 X 8.4967 Y 40.6722
+	G1 X 8.4967 Y 55.3651
+	G2 X 10.2702 Y 59.6471 I 6.0564 J 0.0000
+	G1 X 10.4239 Y 59.8009
+	G3 X 11.3669 Y 62.0778 I -2.2774 J 2.2769
+	G1 X 11.3669 Y 71.9480
+	G2 X 16.9504 Y 77.4609 I 5.5130 J 0.0003
+	G1 X 16.9504 Y 77.6752
+	G1 X 17.2890 Y 77.6752
+	G2 X 17.7461 Y 77.1221 I 0.0000 J -0.4655
+	G1 X 17.7268 Y 77.0510
+	G2 X 17.2890 Y 76.7439 I -0.4377 J 0.1585
+	G1 X 16.9504 Y 76.7439
+	G1 X 16.9504 Y 76.9587
+	G3 X 11.8690 Y 71.9480 I -0.0705 J -5.0104
+	G1 X 11.8690 Y 62.0778
+	G2 X 10.7790 Y 59.4459 I -3.7224 J 0.0000
+	G1 X 10.6252 Y 59.2921
+	G3 X 8.9988 Y 55.3651 I 3.9280 J -3.9271
+	G1 X 8.9988 Y 40.6755
+	G1 X 9.0247 Y 39.6852
+	G1 X 9.0473 Y 39.3409
+	G1 X 9.0995 Y 38.7601
+	G1 X 9.1441 Y 38.4061
+	G1 X 9.2647 Y 37.5706
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 604
+	G0 X 9.2730 Y 37.5718
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.4570 Y 36.3888
+	G1 X 9.5709 Y 35.5459
+	G1 X 9.6080 Y 35.1934
+	G1 X 9.6862 Y 33.8777
+	G1 X 9.6862 Y 28.1579
+	G2 X 5.5219 Y 18.0989 I -14.2310 J 0.0000
+	G3 X 1.1051 Y 6.7510 I 12.3694 J -11.3479
+	G1 X 1.1051 Y 1.1285
+	G2 X 1.0885 Y 1.0373 I -0.2594 J 0.0000
+	G1 X 1.0885 Y 0.9921
+	G2 X 0.6026 Y 0.9921 I -0.2430 J 0.0000
+	G1 X 0.6026 Y 1.0373
+	G2 X 0.5861 Y 1.1285 I 0.2429 J 0.0911
+	G1 X 0.5861 Y 6.7510
+	G2 X 5.1517 Y 18.4627 I 17.3050 J -0.0003
+	G3 X 9.1672 Y 28.1579 I -9.6965 J 9.6952
+	G1 X 9.1672 Y 33.8700
+	G1 X 9.0903 Y 35.1565
+	G1 X 9.0553 Y 35.4875
+	G1 X 8.9431 Y 36.3168
+	G1 X 8.7597 Y 37.4957
+	G1 X 8.6379 Y 38.3401
+	G1 X 8.5914 Y 38.7098
+	G1 X 8.5381 Y 39.3045
+	G1 X 8.5145 Y 39.6669
+	G1 X 8.4883 Y 40.6722
+	G1 X 8.4883 Y 55.3651
+	G2 X 10.2642 Y 59.6531 I 6.0649 J 0.0000
+	G1 X 10.4180 Y 59.8069
+	G3 X 11.3585 Y 62.0778 I -2.2714 J 2.2709
+	G1 X 11.3585 Y 71.9480
+	G2 X 16.9419 Y 77.4694 I 5.5214 J 0.0003
+	G1 X 16.9419 Y 77.6837
+	G1 X 17.2890 Y 77.6837
+	G2 X 17.7543 Y 77.1199 I 0.0000 J -0.4739
+	G1 X 17.7348 Y 77.0481
+	G2 X 17.2890 Y 76.7355 I -0.4457 J 0.1613
+	G1 X 16.9419 Y 76.7355
+	G1 X 16.9419 Y 76.9503
+	G3 X 11.8774 Y 71.9480 I -0.0620 J -5.0020
+	G1 X 11.8774 Y 62.0778
+	G2 X 10.7850 Y 59.4399 I -3.7309 J 0.0000
+	G1 X 10.6312 Y 59.2862
+	G3 X 9.0072 Y 55.3651 I 3.9220 J -3.9211
+	G1 X 9.0072 Y 40.6756
+	G1 X 9.0332 Y 39.6856
+	G1 X 9.0558 Y 39.3415
+	G1 X 9.1079 Y 38.7610
+	G1 X 9.1525 Y 38.4073
+	G1 X 9.2730 Y 37.5718
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 654
+	G0 X 9.2814 Y 37.5731
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 9.4654 Y 36.3900
+	G1 X 9.5794 Y 35.5468
+	G1 X 9.6165 Y 35.1939
+	G1 X 9.6947 Y 33.8777
+	G1 X 9.6947 Y 28.1579
+	G2 X 5.5280 Y 18.0931 I -14.2394 J 0.0000
+	G3 X 1.1135 Y 6.7510 I 12.3632 J -11.3421
+	G1 X 1.1135 Y 1.1285
+	G2 X 1.0970 Y 1.0358 I -0.2679 J 0.0000
+	G1 X 1.0970 Y 0.9921
+	G2 X 0.5941 Y 0.9921 I -0.2514 J 0.0000
+	G1 X 0.5941 Y 1.0358
+	G2 X 0.5776 Y 1.1285 I 0.2514 J 0.0926
+	G1 X 0.5776 Y 6.7510
+	G2 X 5.1459 Y 18.4688 I 17.3135 J -0.0004
+	G3 X 9.1587 Y 28.1579 I -9.6907 J 9.6891
+	G1 X 9.1587 Y 33.8697
+	G1 X 9.0819 Y 35.1558
+	G1 X 9.0469 Y 35.4865
+	G1 X 8.9347 Y 36.3155
+	G1 X 8.7513 Y 37.4944
+	G1 X 8.6295 Y 38.3390
+	G1 X 8.5830 Y 38.7091
+	G1 X 8.5296 Y 39.3039
+	G1 X 8.5061 Y 39.6667
+	G1 X 8.4798 Y 40.6722
+	G1 X 8.4798 Y 55.3651
+	G2 X 10.2582 Y 59.6591 I 6.0733 J 0.0000
+	G1 X 10.4120 Y 59.8129
+	G3 X 11.3500 Y 62.0778 I -2.2654 J 2.2649
+	G1 X 11.3500 Y 71.9480
+	G2 X 16.9334 Y 77.4780 I 5.5299 J 0.0004
+	G1 X 16.9334 Y 77.6922
+	G1 X 17.2890 Y 77.6922
+	G2 X 17.7624 Y 77.1175 I 0.0000 J -0.4824
+	G1 X 17.7427 Y 77.0453
+	G2 X 17.2890 Y 76.7270 I -0.4537 J 0.1642
+	G1 X 16.9334 Y 76.7270
+	G1 X 16.9334 Y 76.9420
+	G3 X 11.8859 Y 71.9480 I -0.0536 J -4.9937
+	G1 X 11.8859 Y 62.0778
+	G2 X 10.7910 Y 59.4339 I -3.7394 J 0.0000
+	G1 X 10.6372 Y 59.2802
+	G3 X 9.0157 Y 55.3651 I 3.9160 J -3.9151
+	G1 X 9.0157 Y 40.6757
+	G1 X 9.0416 Y 39.6860
+	G1 X 9.0642 Y 39.3422
+	G1 X 9.1163 Y 38.7619
+	G1 X 9.1609 Y 38.4084
+	G1 X 9.2814 Y 37.5731
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 87
+	G0 X 11.0621 Y 57.4698
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 11.0623 Y 57.4702
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 88
+	G0 X 10.7751 Y 57.6382
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 10.7748 Y 57.6378
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 1
+	G0 X 11.4516 Y 62.0778
+	' Custom Tool (On)
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//
+	
+	G1 X 11.4516 Y 71.9480
+	G2 X 16.8796 Y 77.3760 I 5.4280 J 0.0000
+	G1 X 17.0350 Y 77.3760
+	G1 X 17.0350 Y 77.5906
+	G1 X 17.2890 Y 77.5906
+	G1 X 17.3552 Y 77.5848
+	G1 X 17.4193 Y 77.5676
+	G1 X 17.4795 Y 77.5395
+	G1 X 17.5339 Y 77.5015
+	G1 X 17.5809 Y 77.4545
+	G1 X 17.6190 Y 77.4001
+	G1 X 17.6471 Y 77.3399
+	G1 X 17.6642 Y 77.2758
+	G1 X 17.6700 Y 77.2096
+	G1 X 17.6642 Y 77.1434
+	G1 X 17.6471 Y 77.0793
+	G1 X 17.6190 Y 77.0191
+	G1 X 17.5809 Y 76.9647
+	G1 X 17.5339 Y 76.9177
+	G1 X 17.4795 Y 76.8796
+	G1 X 17.4193 Y 76.8516
+	G1 X 17.3552 Y 76.8344
+	G1 X 17.2890 Y 76.8286
+	G1 X 17.0350 Y 76.8286
+	G1 X 17.0350 Y 77.0432
+	G1 X 16.8796 Y 77.0432
+	G3 X 11.7843 Y 71.9480 I 0.0000 J -5.0952
+	G1 X 11.7843 Y 62.0778
+	G2 X 10.7188 Y 59.5055 I -3.6378 J 0.0000
+	G1 X 10.7187 Y 59.5053
+	G1 X 10.5658 Y 59.3525
+	G1 X 10.5657 Y 59.3523
+	G3 X 8.9141 Y 55.3651 I 3.9875 J -3.9873
+	G1 X 8.9141 Y 40.6744
+	G1 X 8.9402 Y 39.6814
+	G1 X 8.9629 Y 39.3343
+	G1 X 9.0153 Y 38.7510
+	G1 X 9.0602 Y 38.3948
+	G1 X 9.1809 Y 37.5580
+	G1 X 9.2198 Y 37.3192
+	G1 X 9.2200 Y 37.3178
+	G1 X 9.3643 Y 36.3792
+	G2 X 9.3647 Y 36.3763 I -0.1388 J -0.0217
+	G1 X 9.4778 Y 35.5408
+	G2 X 9.4784 Y 35.5361 I -0.1537 J -0.0210
+	G1 X 9.5144 Y 35.1954
+	G2 X 9.5151 Y 35.1879 I -0.1607 J -0.0171
+	G1 X 9.5928 Y 33.8876
+	G2 X 9.5931 Y 33.8777 I -0.1633 J -0.0099
+	G1 X 9.5931 Y 28.1579
+	G2 X 5.4547 Y 18.1634 I -14.1379 J 0.0000
+	G3 X 1.0119 Y 6.7510 I 12.4366 J -11.4124
+	G1 X 1.0119 Y 1.1285
+	G2 X 0.9954 Y 1.0562 I -0.1663 J 0.0000
+	G1 X 0.9954 Y 0.9921
+	G2 X 0.6957 Y 0.9921 I -0.1498 J 0.0000
+	G1 X 0.6957 Y 1.0562
+	G2 X 0.6792 Y 1.1285 I 0.1498 J 0.0723
+	G1 X 0.6792 Y 6.7510
+	G2 X 5.2117 Y 18.3908 I 17.2121 J 0.0000
+	G2 X 5.2169 Y 18.3962 I 0.1192 J -0.1089
+	G3 X 9.2603 Y 28.1579 I -9.7616 J 9.7617
+	G1 X 9.2603 Y 33.8727
+	G1 X 9.1831 Y 35.1642
+	G1 X 9.1477 Y 35.4986
+	G1 X 9.0352 Y 36.3302
+	G1 X 8.8913 Y 37.2665
+	G1 X 8.8523 Y 37.5060
+	G2 X 8.8518 Y 37.5090 I 0.1385 J 0.0228
+	G1 X 8.7307 Y 38.3487
+	G2 X 8.7303 Y 38.3517 I 0.1386 J 0.0202
+	G1 X 8.6848 Y 38.7124
+	G2 X 8.6842 Y 38.7183 I 0.1576 J 0.0200
+	G1 X 8.6313 Y 39.3065
+	G2 X 8.6310 Y 39.3105 I 0.1500 J 0.0137
+	G1 X 8.6079 Y 39.6628
+	G2 X 8.6076 Y 39.6694 I 0.1599 J 0.0106
+	G1 X 8.5814 Y 40.6678
+	G2 X 8.5814 Y 40.6722 I 0.1527 J 0.0042
+	G1 X 8.5814 Y 55.3651
+	G1 X 8.5814 Y 55.3651
+	G2 X 10.3304 Y 59.5876 I 5.9718 J 0.0000
+	G1 X 10.3305 Y 59.5878
+	G1 X 10.4834 Y 59.7406
+	G1 X 10.4835 Y 59.7408
+	G3 X 11.4516 Y 62.0778 I -2.3370 J 2.3370
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Custom Tool (Teardown)
+end
+
+G82   ; 清除 G92所設定的偏移
+//AppDataCollectionStop()//蒐集數據結束
+PsoWaveformOff(GX)
+PsoDistanceEventsOff(GX)
+PsoDistanceCounterOff(GX)
+
+//VelocityBlendingOff()
+
+SetupTaskTargetMode(TargetMode.Absolute)
+MoveLinear([X,Y],[150,0],100)//出料位置
+
+end
