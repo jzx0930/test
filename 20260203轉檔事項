@@ -6,17 +6,29 @@ Keep the tool on while skywriting 不勾選
 參數1
 Control Point Offset 1.0
 Extension Length=3.0
-Break Angle=180         
+Break Angle=180        
 Keep the tool on while skywriting 不勾選
 
 參數2
-Control Point Offset 20.0
+Control Point Offset 0.1
 Extension Length=3.0
-Break Angle=180         
+Break Angle=180        
 Keep the tool on while skywriting 不勾選
 
 參數3
 Control Point Offset 1.0
+Extension Length=0.1
+Break Angle=180        
+Keep the tool on while skywriting 不勾選
+
+參數4
+Control Point Offset 20.0
+Extension Length=3.0
+Break Angle=180        
+Keep the tool on while skywriting 不勾選
+
+參數5
+Control Point Offset 1.0
 Extension Length=20.0
-Break Angle=180         
+Break Angle=180        
 Keep the tool on while skywriting 不勾選
