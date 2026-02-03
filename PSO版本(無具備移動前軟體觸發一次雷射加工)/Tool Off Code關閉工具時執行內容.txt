@@ -1,0 +1,4 @@
+PsoOutputOff(GX)
+PsoDistanceEventsOff(GX)
+PsoDistanceCounterOff(GX)
+PsoWaveformOff(GX)

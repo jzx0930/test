@@ -1,4 +1,4 @@
-
+//流程開始時執行一次的程式碼
 #define ShapeFeedrate 30 			//G0速度 
 #define CoordinatedMotionTransitionFeedrate 30  //G1速度 
 
