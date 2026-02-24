@@ -1,0 +1,172 @@
+' 2/24/2026 5:07:51 PM
+#define CoordinatedMotionTransitionFeedrate 20
+#define ShapeFeedrate 10
+
+program
+
+G90
+G71
+G76
+
+G16 X Y Z
+G17
+
+' Root Group
+
+' Layer 0
+
+' Shape 1
+' Custom Tool (Initialization)
+//流程開始時執行一次的程式碼
+#define ShapeFeedrate 30 			//G0速度
+#define CoordinatedMotionTransitionFeedrate 30  //G1速度
+
+#define X_Start 185 //X加工起點
+#define Y_Start 89  //Y加工起點
+#define PulseCount 1
+#define PulseTime 1.8 //PulseTime單位:us
+#define DistanceThreshold 0.002 //DistanceThreshold單位:mm 。XY平台最小解析度為0.1um
+
+var $numberOfSteps as integer
+var $currentStep as integer
+$numberOfSteps=1 //迴圈次數
+
+// -------------------------
+//  X/Y 軸基本設定
+// -------------------------
+SetupAxisRampType([X,Y],RampType.Sine)
+SetupAxisRampValue([X,Y],RampMode.Rate,200/1.57)	//G0加速度(units/sec²)。
+//SetupAxisRampValue([X,Y],RampMode.Rate,100000/1.57)   // 正方形
+SetupAxisSpeed([X,Y],[20,20])
+
+SetupCoordinatedRampType(RampType.Sine)
+SetupCoordinatedRampValue(RampMode.Rate,200/1.57)	//G1加速度(units/sec²)。
+//SetupCoordinatedRampValue(RampMode.Rate,ShapeFeedrate*1/1.57)//正方形
+SetupCoordinatedSpeed(ShapeFeedrate)
+
+SetupTaskDistanceUnits(DistanceUnits.Primary)
+SetupTaskTimeUnits(TimeUnits.Seconds)
+SetupTaskTargetMode(TargetMode.Absolute)
+SetupTaskWaitMode(WaitMode.MotionDone)
+
+// -------------------------
+//  Encoder Echo（X/Y → GX）
+// -------------------------
+var $outputDivider as integer = 1
+
+DriveEncoderOutputConfigureDirection(X,EncoderOutputChannel.SyncPortA,0)
+DriveEncoderOutputConfigureDivider(X,EncoderOutputChannel.SyncPortA,$outputDivider)
+DriveEncoderOutputConfigureInput(X,EncoderOutputChannel.SyncPortA,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(X,EncoderOutputChannel.SyncPortA,EncoderOutputMode.Default)
+
+DriveEncoderOutputConfigureDirection(Y,EncoderOutputChannel.SyncPortB,0)
+DriveEncoderOutputConfigureDivider(Y,EncoderOutputChannel.SyncPortB,$outputDivider)
+DriveEncoderOutputConfigureInput(Y,EncoderOutputChannel.SyncPortB,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(Y,EncoderOutputChannel.SyncPortB,EncoderOutputMode.Default)
+
+
+// -------------------------
+//  PSO 設定
+// -------------------------
+PsoReset(GX)
+
+// 依距離觸發
+PsoDistanceConfigureCounterReset(GX,PsoDistanceCounterResetMask.ResetWhenOutputOff)
+PsoDistanceConfigureInputs(GX,[PsoDistanceInput.GL4SyncPortB,PsoDistanceInput.GL4SyncPortA])
+PsoDistanceConfigureFixedDistance(GX,Trunc(UnitsToCounts(GX,DistanceThreshold)/ParameterGetAxisValue(GX,AxisParameter.PrimaryEmulatedQuadratureDivider)))//單位mm 移動1000um =1mm  500um=0.5mm  0.05mm=50um 0.002mm=2um
+
+
+// 脈衝波型
+/*The time in microseconds
+雷射重複頻率=400kHz
+=1/400000=0.0000025s=2.5us(得出2.5us=1發)
+所以100us=40發
+*/
+PsoWaveformConfigureMode(GX,PsoWaveformMode.Pulse)
+PsoWaveformConfigurePulseFixedCount(GX, PulseCount)
+PsoWaveformConfigurePulseFixedOnTime(GX, PulseTime) //每一個脈衝的高電位時間 1s=1000ms=1000000us
+PsoWaveformConfigurePulseFixedTotalTime(GX, PulseTime)
+PsoWaveformApplyPulseConfiguration(GX)
+PsoWaveformOn(GX)
+
+// 實體輸出腳位
+PsoOutputConfigureOutput(GX,PsoOutputPin.GL4LaserOutput0)
+PsoOutputConfigureSource(GX,PsoOutputSource.Waveform)
+
+//VelocityBlendingOff()
+//VelocityBlendingOn()
+// -------------------------
+//  運動
+// -------------------------
+//AppDataCollectionStop()蒐集資料
+//AppDataCollectionSnapshot()
+//----------------
+
+//以下為加工路徑運行
+for $currentStep = 1 to $numberOfSteps
+	G82
+	
+	PsoDistanceCounterOff(GX)
+	PsoDistanceEventsOff(GX)
+	MoveLinear([X,Y],[X_Start,Y_Start],300)
+	
+	G92 X0 Y0     ; 將目前位置設定為 (0,0)
+	G0 X 0.4100 Y 60.1100
+	F ShapeFeedrate
+	' Custom Tool (On)
+	
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//PsoEventGenerateSingle(GX)
+	
+	G1 X 0.4100 Y 0.1100
+	G1 X 0.1100 Y 0.1100
+	G1 X 0.1100 Y 60.1100
+	G1 X 0.4100 Y 60.1100
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Shape 5
+	G0 X 0.5200 Y 60.2200
+	' Custom Tool (On)
+	
+	//PSO On
+	PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+	PsoWaveformOn(GX)
+	PsoDistanceCounterOn(GX)
+	PsoDistanceEventsOn(GX)
+	//Triggered once before moving
+	//PsoEventGenerateSingle(GX)
+	
+	G1 X 0.5200 Y 0.0000
+	G1 X 0.0000 Y 0.0000
+	G1 X 0.0000 Y 60.2200
+	G1 X 0.5200 Y 60.2200
+	' Custom Tool (Off)
+	PsoOutputOff(GX)
+	PsoDistanceEventsOff(GX)
+	PsoDistanceCounterOff(GX)
+	PsoWaveformOff(GX)
+	
+	' Custom Tool (Teardown)
+end
+
+G82   ; 清除 G92所設定的偏移
+//AppDataCollectionStop()//蒐集數據結束
+PsoWaveformOff(GX)
+PsoDistanceEventsOff(GX)
+PsoDistanceCounterOff(GX)
+
+//VelocityBlendingOff()
+
+SetupTaskTargetMode(TargetMode.Absolute)
+MoveLinear([X,Y],[150,0],100)//出料位置
+
+end
