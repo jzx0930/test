@@ -1,0 +1,1 @@
+依照您提供的照片，還需GL4的Control Supply端子與一條HyperWire線，明天我會帶去。另外，我還會再帶兩條Sync Port線，用於把XC4e驅動器的編碼器計數值傳給GL4驅動器
