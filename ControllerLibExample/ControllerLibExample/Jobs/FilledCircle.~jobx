@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ARGES_INSCRIPT xsi:noNamespaceSchemaLocation="jobfile.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" fileVersion="4">
+ <JOBS>
+  <JOBNODE type="Job" name="FilledCircle1">
+   <PARAMETERS>
+    <SELECT name="exec" flags="BJVWu">Execute</SELECT>
+    <SET name="opt" flags="JVWu">
+    </SET> <!-- opt -->
+    <SET name="stats" flags="JVu">
+     <REAL64 name="totalDuration" flags="BJ">0</REAL64>
+    </SET> <!-- stats -->
+    <STRING name="fileName" flags="BJVWu">C:/dev/source/ControllerLibExamples/Jobs/FilledCircle.jobx</STRING>
+    <BOOLEAN name="storedWithDependencies" flags="BJVWu">1</BOOLEAN>
+    <TEXT name="scriptOnLoaded" flags="BJVWu"></TEXT>
+    <TEXT name="scriptOnSelected" flags="BJVWu"></TEXT>
+    <BIN name="thumbnail" flags="BJVWu"></BIN>
+    <BIN name="thumbnailRgb" flags="BJVWu"></BIN>
+    <TEXT name="description" flags="BJVWu"></TEXT>
+    <BIN name="linePreview" flags="BJVWu"></BIN>
+    <TEXT name="userInterface" flags="BJVWu"></TEXT>
+    <BOOLEAN name="modified" flags="BJV">1</BOOLEAN>
+    <BOOLEAN name="autosaved" flags="BJV">0</BOOLEAN>
+   </PARAMETERS>
+   <SUBNODES>
+    <JOBNODE type="Hatch" name="Hatch">
+     <PARAMETERS>
+      <SELECT name="exec" flags="BJVWu">Execute</SELECT>
+      <SET name="opt" flags="JVWu">
+      </SET> <!-- opt -->
+      <SET name="stats" flags="JVu">
+       <REAL64 name="totalDuration" flags="BJ">0</REAL64>
+      </SET> <!-- stats -->
+      <REAL32 name="x0" flags="BJVWu">0</REAL32>
+      <REAL32 name="y0" flags="BJVWu">0</REAL32>
+      <REAL32 name="d" flags="BJVWu">0.15</REAL32>
+      <REAL32 name="angle1" flags="BJVWu">45</REAL32>
+      <REAL32 name="angle2" flags="BJTVWu">135</REAL32>
+      <REAL32 name="multi_d" flags="BJTVWu">60</REAL32>
+      <INT32 name="multi_n" flags="BJTVWu">3</INT32>
+      <REAL32 name="reduction" flags="BJVWu">0</REAL32>
+      <BOOLEAN name="edge" flags="BJVWu">1</BOOLEAN>
+      <BOOLEAN name="fill" flags="BJVWu">1</BOOLEAN>
+      <SELECT name="mode" flags="BJVWu">Single</SELECT>
+      <BOOLEAN name="bidirectional" flags="BJVWu">1</BOOLEAN>
+      <BOOLEAN name="edge_first" flags="BJVWu">0</BOOLEAN>
+      <SELECT name="interleave_mode" flags="BJVWu">Linear</SELECT>
+      <INT32 name="interleave" flags="BJVWu">1</INT32>
+     </PARAMETERS>
+     <SUBNODES>
+      <JOBNODE type="Ellipse" name="Ellipse">
+       <PARAMETERS>
+        <SELECT name="exec" flags="BJVWu">Execute</SELECT>
+        <SET name="opt" flags="JVWu">
+        </SET> <!-- opt -->
+        <SET name="stats" flags="JVu">
+         <REAL64 name="totalDuration" flags="BJ">0</REAL64>
+        </SET> <!-- stats -->
+        <REAL32 name="x1" flags="BJVWu">0</REAL32>
+        <REAL32 name="y1" flags="BJVWu">0</REAL32>
+        <REAL32 name="x2" flags="BJVWu">10</REAL32>
+        <REAL32 name="y2" flags="BJVWu">10</REAL32>
+        <SELECT name="origin" flags="BJVWu">Center, Center</SELECT>
+        <BOOLEAN name="absolute" flags="BJVWu">0</BOOLEAN>
+        <REAL32 name="startAngle" flags="BJVWu">0</REAL32>
+        <REAL32 name="centralAngle" flags="BJVWu">360</REAL32>
+        <SELECT name="angleDirection" flags="BJVWu">Counterclockwise</SELECT>
+        <BOOLEAN name="drawRadii" flags="BJVWu">0</BOOLEAN>
+        <BOOLEAN name="drawChord" flags="BJVWu">0</BOOLEAN>
+        <INT32 name="numSegments" flags="BJVWu">40</INT32>
+       </PARAMETERS>
+      </JOBNODE> <!-- Ellipse -->
+     </SUBNODES>
+    </JOBNODE> <!-- Hatch -->
+   </SUBNODES>
+  </JOBNODE> <!-- FilledCircle1 -->
+ </JOBS>
+</ARGES_INSCRIPT>
