@@ -1,0 +1,279 @@
+
+using System; // 引入基本系統命名空間
+using System.Collections.Generic; // 引入泛型集合類別（如 List）
+using System.Linq; // 引入 LINQ 查詢功能
+using System.Text; // 引入文字編碼與處理功能
+using System.Threading.Tasks; // 引入非同步任務功能
+using Module_Interface; // 引入自訂模組介面（可能是 CommModule 的定義）
+using Microlution.Component.Scanhead.Arges.Driver; // 引入 Argus 掃描器驅動程式
+using System.Threading; // 引入執行緒控制功能（如 Thread.Sleep）
+
+namespace LaserScanner.Arges
+{
+    public class ArgesPLCEventArgs : EventArgs // 定義 PLC 狀態事件參數類別，繼承自 EventArgs
+    {
+        public argesWrapper.PLC_States States { get; set; } // 儲存 PLC 狀態結構
+        public ArgesPLCEventArgs() // 建構子
+        {
+            States = new argesWrapper.PLC_States(); // 初始化 PLC 狀態
+        }
+    }
+
+    public class argesWrapper : CommModule // 定義 argesWrapper 類別，繼承通訊模組 CommModule
+    {
+        public struct PLC_States // 定義 PLC 狀態結構，包含所有狀態旗標
+        {
+            public bool PLC_DEVICES_AWAKE; // 裝置已喚醒
+            public bool PLC_DEVICES_FAILURE; // 裝置故障
+            public bool PLC_DEVICES_READY; // 裝置準備完成
+            public bool PLC_DEVICES_SETUP; // 裝置設定中
+            public bool PLC_JOB_READY;  // 加工任務準備完成
+            public bool PLC_JOB_ACTIVE; // 加工任務執行中
+            public bool PLC_JOB_COMPLETED; // 加工任務完成
+            public bool PLC_JOB_FAILED; // 加工任務失敗
+            public bool PLC_SYS_SAFE; // 系統安全狀態
+            public bool PLC_JOB_PAUSED; // 加工任務暫停
+            public bool PLC_JOB_PILOTED; // 加工任務導引中
+            public bool PLC_JOB_PRELOADED; // 任務已預載
+            public bool PLC_JOB_STOPPING; // 任務停止中
+            public bool PLC_READY_FOR_POWER_OFF; // 可關機狀態
+            public bool PLC_SYSTEM_READY; // 系統準備完成
+            public bool PLC_ATTENTION; // 系統注意狀態
+            public bool PLC_SYS_SAFE_REQUEST; // 請求安全狀態
+            public bool PLC_JOB_PRELOAD; // 任務預載中
+        }
+
+        public delegate void ArgesPLCEvent(object sender, ArgesPLCEventArgs e); // 定義事件委派
+        public event ArgesPLCEvent ArgesPLCEventUpdated; // 定義 PLC 狀態更新事件
+
+        private ArgesScanheadDriver _driver; // 掃描器驅動器實例
+        private Dictionary<string, string> _iniDic; // 儲存初始化參數字典
+        private string _IP; // 控制器 IP 位址
+        private int _port; // 控制器通訊埠
+
+        public argesWrapper(string name) : base(name) // 建構子，呼叫基底類別建構子
+        {
+            _iniDic = this.GetIniDic(); // 取得設定檔參數
+            this.UpdatePrivateParams(); // 更新私有參數（IP 與 Port）
+        }
+
+        ~argesWrapper() // 解構子，物件銷毀時執行
+        {
+            destruction(); // 執行資源釋放
+        }
+
+        private void destruction() // 資源釋放方法
+        {
+            if (this.GetState() == SteadyState.Ready) // 若狀態為 Ready
+            {
+                try { this.Deinitialize(); } // 嘗試解除初始化
+                catch (Exception) { } // 忽略例外
+            }
+            if (this.GetState() == SteadyState.Idle) // 若狀態為 Idle
+            {
+                try { this.Close(); } // 嘗試關閉連線
+                catch (Exception) { throw; } // 丟出例外
+            }
+        }
+
+        #region Protected Override Method
+
+        protected override void UpdatePrivateParams() // 更新 IP 與 Port 設定
+        {
+            try
+            {
+                _IP = _iniDic["IP"]; // 從設定字典取得 IP
+                _port = int.Parse(_iniDic["Port"]); // 從設定字典取得 Port 並轉為整數
+            }
+            catch (Exception ex)
+            {
+                throw ex; // 丟出例外
+            }
+        }
+
+        protected override void DoConnect() // 建立驅動器實例
+        {
+            try
+            {
+                _driver = new ArgesScanheadDriver(); // 初始化驅動器
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("DoConnect failed = " + ex); // 包裝例外訊息
+            }
+        }
+
+        protected override void DoInitialize() // 初始化連線與事件註冊
+        {
+            try
+            {
+                _driver.Connect(_IP, (short)_port); // 連線至控制器
+                Thread.Sleep(500); // 暫停 500 毫秒，等待連線穩定
+                _driver.OnPLCChanged += _driver_OnPLCChanged; // 註冊 PLC 狀態變更事件
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("DoInitialize failed = " + ex); // 包裝例外訊息
+            }
+        }
+
+        protected override void DoDeinitialize() // 解除事件與斷線
+        {
+            try
+            {
+                _driver.OnPLCChanged -= _driver_OnPLCChanged; // 解除事件註冊
+                _driver.Disconnect(); // 中斷連線
+            }
+            catch (Exception ex)
+            {
+                throw ex; // 丟出例外
+            }
+        }
+
+        protected override void DoClose() // 關閉驅動器（目前未實作）
+        {
+            try
+            {
+                // Deinitialize ArgesScanheadDriver
+            }
+            catch (Exception ex)
+            {
+                throw ex; // 丟出例外
+            }
+        }
+        #endregion
+
+        #region Public Method
+
+        public string Connect1(string ip,short port) // 測試控制器連線
+        {
+          //  return _driver.Connect(ip,port);
+
+            return _driver.GetFirmwareVersion();
+            //     _driver.ConnectSSH(""172.29.227.238);
+        }
+
+        public bool Disconnect()
+        {
+            return _driver.Disconnect();
+        }
+
+        public bool PingController() // 測試控制器連線
+        {
+            return _driver.PingController();
+        }
+
+        public string GetFirmwareVersion() // 取得韌體版本
+        {
+            return _driver.GetFirmwareVersion();
+        }
+
+        public string GetLibVersion() // 取得驅動程式版本
+        {
+            return _driver.GetLibVersion();
+        }
+
+        public bool ClearJobs() // 清除所有加工任務
+        {
+            List<string> JobxNames = new List<string>(); // 建立任務清單
+            GetJobNames(out JobxNames); // 取得任務名稱
+
+            if (JobxNames.Count == 0) // 若無任務
+                return true;
+            else
+            {
+                while (JobxNames.Count != 0) // 若仍有任務
+                {
+                    _driver.DeleteJobByName(JobxNames[0]); // 刪除第一個任務
+                    GetJobNames(out JobxNames); // 重新取得任務清單
+                }
+                return true;
+            }
+        }
+        public bool GetJobNames(out List<string> jobxNames) // 取得所有任務名稱
+        {
+            return _driver.GetJobNames(out jobxNames);
+        }
+
+        public bool LoadJobFromFile(string filePath) // 從檔案載入任務
+        {
+            _driver.LoadJobFromFile(filePath); // 載入任務檔案
+            return _driver.SelectJob(0); // 選擇第一個任務
+        }
+
+        public bool SelectJobByName(string jobxName) // 根據名稱選擇任務
+        {
+            return _driver.SelectJobByName(jobxName);
+        }
+
+        public bool StartJob() // 啟動加工任務
+        {
+            return _driver.StartJob();
+        }
+
+        public int startJob() // 啟動加工任務
+        {
+            return _driver.startJob();
+        }
+
+        public bool StopJob() // 停止加工任務
+        {
+            return _driver.StopJob();
+        }
+
+        public bool AbortJob() // 中止加工任務
+        {
+            return _driver.AbortJob();
+        }
+
+        #endregion
+
+        #region Private Method
+
+        private void _driver_OnPLCChanged(int state) // PLC 狀態變更事件處理
+        {
+            var args = convertStateToEventArgs(state); // 轉換為事件參數
+            ArgesPLCEventUpdated(this, args); // 觸發事件通知外部
+        }
+        private ArgesPLCEventArgs convertStateToEventArgs(int state) // 將 PLC 傳來的整數狀態轉換為事件參數物件
+        {
+            var args = new ArgesPLCEventArgs(); // 建立事件參數物件
+            var states = new PLC_States() // 建立 PLC 狀態結構，並逐位元解析
+            {
+                PLC_DEVICES_AWAKE = getState(state, 0),   // 第 0 位：裝置已喚醒
+                PLC_DEVICES_FAILURE = getState(state, 1), // 第 1 位：裝置故障
+                PLC_DEVICES_READY = getState(state, 2),   // 第 2 位：裝置準備完成
+                PLC_DEVICES_SETUP = getState(state, 3),   // 第 3 位：裝置設定中
+                PLC_JOB_READY = getState(state, 4),       // 第 4 位：任務準備完成
+                PLC_JOB_ACTIVE = getState(state, 5),      // 第 5 位：任務執行中
+                PLC_JOB_COMPLETED = getState(state, 6),   // 第 6 位：任務完成
+                PLC_JOB_FAILED = getState(state, 7),      // 第 7 位：任務失敗
+                PLC_SYS_SAFE = getState(state, 8),        // 第 8 位：系統安全
+                PLC_JOB_PAUSED = getState(state, 9),      // 第 9 位：任務暫停
+                PLC_JOB_PILOTED = getState(state, 10),    // 第 10 位：任務導引中
+                PLC_JOB_PRELOAD = getState(state, 11),    // 第 11 位：任務預載中
+                PLC_JOB_STOPPING = getState(state, 12),        // 第 12 位：任務停止中
+                PLC_READY_FOR_POWER_OFF = getState(state, 13), // 第 13 位：可關機
+                PLC_SYSTEM_READY = getState(state, 14),        // 第 14 位：系統準備完成
+                PLC_ATTENTION = getState(state, 15),           // 第 15 位：系統注意
+                PLC_SYS_SAFE_REQUEST = getState(state, 16),    // 第 16 位：請求安全狀態
+                PLC_JOB_PRELOADED = getState(state, 17)        // 第 17 位：任務已預載
+            };
+            args.States = states; // 將解析後的狀態結構賦值給事件參數
+            return args; // 回傳事件參數物件
+        }
+
+        private bool getState(int state, int index) // 解析指定位元的布林值
+        {
+            int mask = 1; // 建立遮罩值
+            state >>= index; // 將狀態右移至目標位元
+            var result = mask & state; // 取出該位元的值
+            if (result == mask) // 若該位元為 1
+                return true; // 回傳 true
+            else
+                return false; // 否則回傳 false
+        }
+
+        #endregion
+    }
+}
