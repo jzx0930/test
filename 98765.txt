@@ -1,4 +1,38 @@
-        private void BW_AutoProcess_DoWork(object sender, DoWorkEventArgs e)
+// 修改建議 [針對 cite: 191-192 處]
+if (reconnect_state == 1 && Processing_projects == 1)
+{
+    queueCmds = new Queue<QueueCmd>(reconnect_state_queueCmds);
+}
+else
+{
+    // 關鍵修改：建立新實體，確保不抽乾 data._QueueCmds
+    queueCmds = new Queue<QueueCmd>(data._QueueCmds); 
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+private void BW_AutoProcess_DoWork(object sender, DoWorkEventArgs e)
         {
 
             #region Check before Processing
