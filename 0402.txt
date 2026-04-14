@@ -1,58 +1,1017 @@
-報名資料
-生日：2002/05/11
-身份證：F229804099
-姓名：盧貞蓁
-信箱：lujane0511@gmail.com
-地址：新北市新莊區幸福路670巷2弄1號8樓
-手機：0939709586
-緊急聯絡人：江先生
-緊急聯絡人手機：0908301892
-QD260402914838
+        private void DEMO_TEST_2CUT()//2切動作流程
+        {
 
-生日：1999/09/30
-身份證：C121619502
-姓名：江政軒
-信箱：fuli62@yahoo.com.tw
-地址：桃園市中壢區         仁德三街 23號
-手機：0908301892
-緊急聯絡人：盧小姐
-緊急聯絡人手機：0939709586
-QD260402856005
+            switch (DEMO_flag_2CUT)
+            {
+                case -2:
+                    //DELAY
+                    if (Counter > 6)
+                    {
+                        Counter = 0;
+                        DEMO_flag_2CUT = 2;
+                    }
+                    else
+                    {
+                        Counter++;
+                        Thread.Sleep(10);
+                        DEMO_flag_2CUT = -2;
+                    }
+                    break;
+                case 0:
+
+                    Thread.Sleep(100);
+
+                    break;
+                case 1:
+
+
+                    //確認home完成/severon
+                    if (En && Home && ProcessFileRead_flag_2CUT /*&& _rotationStage.GetIsHomed()*/)
+
+                    {
+                        //20210309
+                        DO_4_OFF();
+                        prog_status = "2切加工中";
+                        if (checkBox_Diff_Len.Checked)//20210629
+                        {
+                            if (!RB_NS_ShortPitch.Checked && !RB_BR_ShortPitch.Checked)
+                            {
+                                process_2CUT_i = process_2CUT_TIP_i = Range_minmun * ReginPinNum;
+                                process_2CUT_END = process_2CUT_TIP_END = (Range_maxmum + 1) * ReginPinNum;
+                            }
+                            else
+                            {
+                                if (RB_Short2Cut_Odd.Checked)
+                                {
+                                    process_2CUT_i = process_2CUT_TIP_i = Range_minmun * ReginPinNum;
+                                    process_2CUT_END = process_2CUT_TIP_END = (Range_maxmum + 1) * ReginPinNum;
+                                }
+                                else if (RB_Short2Cut_Even.Checked)
+                                {
+                                    process_2CUT_i = process_2CUT_TIP_i = (Range_minmun * ReginPinNum) + 1;
+                                    process_2CUT_END = process_2CUT_TIP_END = (Range_maxmum + 1) * ReginPinNum;
+                                }
+
+                            }
+
+                        }
+                        else
+                        {
+                            if (!RB_NS_ShortPitch.Checked && !RB_BR_ShortPitch.Checked)
+                            {
+                                process_2CUT_i = 0;
+                                process_2CUT_TIP_i = 0;
+                                process_2CUT_END = pin_TotalNumber_2CUT * ReginPinNum / 2;
+                                process_2CUT_TIP_END = pin_TotalNumber_2CUT * ReginPinNum / 2;
+                            }
+                            else
+                            {
+                                //短間距二切 參數檔不變 透過位置設定
+                                if (RB_Short2Cut_Odd.Checked)
+                                {
+                                    process_2CUT_i = 0;
+                                    process_2CUT_TIP_i = 0;
+                                    process_2CUT_END = pin_TotalNumber_2CUT * ReginPinNum / 2;
+                                    process_2CUT_TIP_END = pin_TotalNumber_2CUT * ReginPinNum / 2;
+                                }
+                                else if (RB_Short2Cut_Even.Checked)
+                                {
+                                    process_2CUT_i = 1;
+                                    process_2CUT_TIP_i = 1;
+                                    process_2CUT_END = pin_TotalNumber_2CUT * ReginPinNum / 2;
+                                    process_2CUT_TIP_END = pin_TotalNumber_2CUT * ReginPinNum / 2;
+                                }
+
+                            }
+                        }
+
+                        counter_pin_num = 0;
+                        currentTime = DateTime.Now;
+                        process_smallbox_ng = 0;
+                        process_smallbox_i = 0;
 
 
 
-原始手擺4定位點座標	
-22.93037896	-7.796873928
-30.92587245	-7.526614268
-23.07140676	-12.00005597
-31.00746999	-11.73024109
-1.936	
--7.995493488	
-4.20318204	
-	
-轉完1.936度後的4點座標(再次計算需旋轉到水平的角度)	
-23.00098155	-7.673793236
-31.00104416	-7.673462364
-23.000123	-11.87699963
-30.93994847	-11.877485
-	於誤差範圍內就不補正了
-0.002	
--8.000062608	
-4.203206396	
-	轉吸嘴角度
-22.969824848,-7.7266294	
-30.96945916,-7.609461868	
-23.03020664,-11.930555228	
-30.969229892,-11.813892988	
-0.839	
--7.999634312	
-4.203925828	
-	
-	轉180度
-30.25609004,-11.928683764	
-22.256200492,-12.045158672	
-30.195041576,-7.724656824	
-22.255931488,-7.84050406	
--179.166	
-7.999889548	
--4.20402694	
+
+                        using (StreamWriter text = new StreamWriter(classSystem.FilePath_Log + LogTime.ToString("yyyyMMdd") + "_Log.ini", true))
+                        {
+                            text.WriteLine(currentTime.ToString("yyyyMMddHHmm") + "  ;  " + "2切加工開始 ");
+                            //sw.Flush();
+                            text.Close();
+                        }
+                        //StreamWriter s2 = new StreamWriter(classSystem.path_WorkList + LogTime.ToString("yyyMMdd") + "_稼動率.ini", true);
+                        //s2.WriteLine(currentTime.ToString("yyyMMddHHmm") + "  ;  " + "2切加工開始 ");
+
+                        //s2.Close();
+                        double setPower = 0;
+
+                        if (double.TryParse(txt_SetPower_2.Text, out setPower))
+                        {
+
+                            if (setPower < p_min || setPower > p_max)
+                            {
+                                MessageBox.Show("請輸入介於" + p_min.ToString() + "~" + p_max.ToString() + "之間的數值!");
+                                DEMO_flag_2CUT = 0;
+                            }
+                            else
+                            {
+                                //double angle = setPower * _angle_A + _angle_B;//* 0.011 + 3.442;//20210305
+                                //_rotationStage.MoveAbs((decimal)angle, 0);
+
+                                Carbide_PowerSet(setPower);
+
+                            }
+                        }
+                        if (Carbide_PowerSet(setPower))
+                            DEMO_flag_2CUT = 100;
+
+                    }
+                    else
+                    {
+                        if (!En)
+                        {
+                            DEMO_flag_2CUT = 0;
+                            MessageBox.Show("Please Check Servo ON !");
+
+                        }
+
+                        if (!Home)
+                        {
+                            DEMO_flag_2CUT = 0;
+                            MessageBox.Show("Please Check Homed !");
+
+                        }
+                        if ((INT_DI_data & 64) < 1 && !Machine_Name.Contains("LCNH") ||
+                            (INT_DI_data & 64) < 0 && Machine_Name.Contains("LCNH"))
+                        {
+                            DEMO_flag_2CUT = 0;
+                            MessageBox.Show("Please Check Door_Lock !");
+                        }
+                        if (!ProcessFileRead_flag_2CUT)
+                        {
+                            DEMO_flag_2CUT = 0;
+                            MessageBox.Show("未載入檔案 !");
+                        }
+                        //if (!_rotationStage.GetIsHomed())
+                        //{
+                        //	DEMO_flag_2CUT = 0;
+                        //	MessageBox.Show("旋轉馬達未回HOME !");
+                        //}
+                    }
+                    break;
+                case 100:
+
+
+                    if (flag_HeadConected)
+                    {
+                        byte[] p = LaserDesk.LaserDesk.HexToByte("");
+                        _sock.Send(LaserDesk.LaserDesk.ParameterCommand(2, p));
+                        Thread.Sleep(10);
+                        _sock.Send(LaserDesk.LaserDesk.ParameterCommand(1, p));
+                        Thread.Sleep(10);
+                        _sock.Send(LaserDesk.LaserDesk.ParameterCommand(5, p));
+                        Thread.Sleep(10);
+                        _sock.Send(LaserDesk.LaserDesk.ParameterCommand(21, p));
+
+                        if (!Machine_Name.Contains("LCNH"))
+                            DEMO_flag_2CUT = 200;
+                        else if (Machine_Name.Contains("LCNH"))
+                            DEMO_flag_2CUT = 1100;
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 0;
+                        MessageBox.Show("未連接振鏡!");
+                    }
+
+                    
+                    break;
+
+                case 1100:
+                    //確認雷射參數
+                    Check_Laser_Status(0);
+
+                    StartTime = DateTime.Now;
+
+
+                    DEMO_flag_2CUT = 1101;
+                    break;
+
+                case 1101:
+
+                    currentTime = DateTime.Now;
+                    long time_tick = currentTime.Ticks - StartTime.Ticks;
+                    TimeSpan time_s = new TimeSpan(time_tick);
+
+                    //確認laser正常
+                    if (Class_CarbideREST.ActualStateName == "StateEmissionOn")
+                    {
+                        //設定為開光
+                        Class_CarbideREST.OpenOutput();
+                        Thread.Sleep(500);
+
+                        DEMO_flag_2CUT = 1102;
+                    }
+                    else if (time_s.TotalMinutes > 5)
+                    {
+                        DEMO_flag_2CUT = 0;
+                        MessageBox.Show("Laser參數切換失敗!");
+                    }
+
+                    break;
+                case 1102:
+                    //確認1/4玻片氣缸位置
+                    if (!Check_Cylinder_Position(0))
+                    {
+                        DEMO_flag_2CUT = 0;
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 200;
+                    }
+                    break;
+                case 200:
+                    //power test 位置
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+                        //if (_rotationStage.GetIsMotionDone())
+                        {
+                            if (Motion_X && Motion_Y && Motion_Z)
+                            {
+                                ABS_X = Convert.ToDouble(point_position[5, 0]);
+                                ABS_Y = Convert.ToDouble(point_position[5, 1]);
+
+
+                                ABS_Z = Convert.ToDouble(point_position[5, 2]);
+                                Allow_X = Allow_Y = Allow_Z = true;
+                                //Allow_Z = false;
+                                //MessageBox.Show(i.ToString()+","+ ABS_X.ToString() + ";" + j.ToString()+","+ABS_Y.ToString());
+                                //Aero_thMotionRun_Tick(Motion_Num.Motion_ABS);
+                                if (Allow_X)
+                                {
+                                    this.myController.Commands[this.taskIndex].Motion.MoveAbs(0, ABS_X, 40);
+                                }
+                                if (Allow_Y)
+                                {
+                                    this.myController.Commands[this.taskIndex].Motion.MoveAbs(1, ABS_Y, 40);
+                                }
+                                if (Allow_Z)
+                                {
+                                    this.myController.Commands[this.taskIndex].Motion.MoveAbs(2, ABS_Z, 20);
+                                }
+                                DEMO_flag_2CUT = 201;
+                            }
+                        }
+                    }
+                    break;
+                case 201:
+
+                    //判斷軸控是否到定位
+
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+                            //開光
+                            instantDoCtrl1.Write(1, (byte)Convert.ToByte(255));
+                            Thread.Sleep(80);
+                            DO_4_ON();
+                            DEMO_flag_2CUT = 202;
+
+
+
+
+                        }
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 201;
+                    }
+                    break;
+                case 202:
+
+                    //DELAY
+                    if (Counter > 100)
+                    {
+                        Counter = 0;
+                        //START復位
+                        DO_4_OFF();
+                        DEMO_flag_2CUT = 203;
+                    }
+                    else
+                    {
+                        Counter++;
+                        Thread.Sleep(10);
+                        DEMO_flag_2CUT = 202;
+                    }
+                    break;
+                case 203:
+
+                    //pd measure
+                    _powermeter.GetPower(out double power);
+                    Thread.Sleep(30);
+                    outPower = _powerToOutPowerGain * 1000 * power + _powerToOutPowerOffset;
+                    //currentPosition = _rotationStage.GetPosition();
+                    Thread.Sleep(30);
+                    if (checkBox_PowerFix_2CUT.Checked == true)
+                    {
+                        DEMO_flag_2CUT = 209;
+                    }
+                    else
+                    {
+                        //紀錄&存檔
+                        DEMO_flag_2CUT = 300;
+                    }
+                    break;
+                case 209:
+                    //power補償
+                    //currentPosition = _rotationStage.GetPosition();
+                    //if (currentPosition != 0)
+                    //{
+                    //	angle_register = Convert.ToDouble(currentPosition);
+                    //}
+                    //if (currentPosition < a_min || currentPosition > a_max)
+                    //{
+                    //	PowerError++;
+                    //	if (PowerError < 3)
+                    //	{
+                    //		DEMO_flag_2CUT = 203;
+                    //	}
+                    //	else
+                    //	{
+                    //		PowerError = 0;
+                    //		DEMO_flag_2CUT = 204;
+                    //	}
+                    //}
+                    //else
+                    //{
+                    //	PowerError = 0;
+                    //	DEMO_flag_2CUT = 204;
+                    //}
+                    //break;
+                    nowCarbidePower = double.Parse(Class_CarbideREST.ActualAttenuatorPercentage);
+                    if (nowCarbidePower < 0 || nowCarbidePower > 100)
+                    {
+                        PowerError++;
+                        if (PowerError < 3)
+                        {
+                            DEMO_flag_2CUT = 203;
+                        }
+                        else
+                        {
+                            PowerError = 0;
+                            DEMO_flag_2CUT = 204;
+                        }
+                    }
+                    else
+                    {
+                        PowerError = 0;
+                        DEMO_flag_2CUT = 204;
+                    }
+
+                    break;
+
+                case 204:
+                    //if (currentPosition == 0)
+                    //{
+                    //	currentPosition = Convert.ToDecimal(angle_register);
+
+                    //}
+
+                    //if (Math.Abs(Convert.ToDouble(txt_SetPower_2.Text) - outPower) > 6)
+                    //{
+                    //	decimal comp_angle =Math.Round( (decimal)Math.Abs(Convert.ToDouble(txt_SetPower_2.Text) - outPower)/100,1);
+                    //	if(comp_angle< (decimal)0.01)
+                    //	{
+                    //		comp_angle = (decimal)0.01;
+                    //	}
+                    //	if (Convert.ToDouble(txt_SetPower_2.Text) > outPower)
+                    //	{
+                    //		if (((decimal)currentPosition + (decimal)comp_angle) <= a_max)
+                    //		{
+                    //			_rotationStage.MoveAbs((decimal)currentPosition + (decimal)comp_angle, 10);
+                    //			DEMO_flag_2CUT = 205;
+                    //		}
+                    //		else
+                    //		{
+
+                    //			MessageBox.Show("角度異常");
+                    //			DEMO_flag_2CUT = 0;
+                    //		}
+                    //	}
+                    //	else if (Convert.ToDouble(txt_SetPower_2.Text) < outPower)
+                    //	{
+                    //		if (((decimal)currentPosition - (decimal)comp_angle) >= a_min)
+                    //		{
+                    //			_rotationStage.MoveAbs((decimal)currentPosition - (decimal)comp_angle, 10);
+                    //			DEMO_flag_2CUT = 205;
+                    //		}
+                    //		else
+                    //		{
+                    //			MessageBox.Show("角度異常");
+                    //			DEMO_flag_2CUT = 0;
+                    //		}
+                    //	}
+
+                    //}
+                    //else
+                    //{
+                    //	outPowerSend = outPower;
+                    //	//存檔
+                    //	DEMO_flag_2CUT = 300;
+                    //}
+                    //break;
+                    if (Math.Abs(Convert.ToDouble(txt_SetPower_2.Text) - outPower) > 10)
+                    {
+                        if (Convert.ToDouble(txt_SetPower_2.Text) > outPower)
+                        {
+                            if ((nowCarbidePower + 0.2) <= 100) //0.1%
+                            {
+                                if (Class_CarbideREST.SetAttenuatorPercentage(nowCarbidePower + 0.2))
+                                    DEMO_flag_2CUT = 205;
+                            }
+                            else
+                            {
+
+                                MessageBox.Show("功率設定過大，造成異常");
+                                DEMO_flag_2CUT = 0;
+                            }
+                        }
+                        else if (Convert.ToDouble(txt_SetPower_2.Text) < outPower)
+                        {
+                            if ((nowCarbidePower - 0.2) > 0)
+                            {
+                                if (Class_CarbideREST.SetAttenuatorPercentage(nowCarbidePower - 0.2))
+                                    DEMO_flag_2CUT = 205;
+                            }
+                            else
+                            {
+                                MessageBox.Show("功率設定過小，造成異常");
+                                DEMO_flag_2CUT = 0;
+                            }
+                        }
+
+                    }
+                    else
+                    {
+                        outPowerSend = outPower;
+                        //存檔
+                        DEMO_flag_2CUT = 300;
+                    }
+                    break;
+
+                case 205:
+                    //光關閉了嗎?
+
+                    //if ((INT_DI_data_U2 & 1) < 1)
+                    //BUSSY
+                    if ((INT_DI_data1 & 1) == 0)
+                    {
+
+                        DEMO_flag_2CUT = 201;
+                    }
+                    else
+                    {//判斷移動是否完成
+                     //if (_rotationStage.GetIsMotionDone())
+                        {
+
+                            DEMO_flag_2CUT = 203;
+                        }
+                    }
+                    break;
+                case 206:
+                    break;
+                case 300:
+                    currentTime = DateTime.Now;
+                    LogTime = DateTime.Now;
+                    StreamWriter sw = new StreamWriter(classSystem.path_thickness + LogTime.ToString("yyyyMMdd") + "_power.ini", true);
+                    //sw.WriteLine(currentTime.ToString("yyyyMMddHHmm") + "  ;  " + "power_2cut= " + outPower.ToString() + " , " + "角度= " + currentPosition.ToString());
+                    sw.WriteLine(currentTime.ToString("yyyMMddHHmm") + "  ;  " + "power_2cut= " + outPower.ToString() + " , " + "Carbide功率= " + Class_CarbideREST.ActualAttenuatorPercentage);
+                    sw.Close();
+                    //停止
+                    DO_7_ON();
+                    DEMO_flag_2CUT = 301;
+                    break;
+                case 301:
+                    //DELAY
+                    if (Counter > 70)
+                    {
+                        Counter = 0;
+                        DEMO_flag_2CUT = 302;
+                    }
+                    else
+                    {
+                        Counter++;
+                        Thread.Sleep(10);
+                        DEMO_flag_2CUT = 301;
+                    }
+                    break;
+                case 302:
+                    //停止復位
+                    DO_7_OFF();
+
+                    DEMO_flag_2CUT = 1000;
+                    break;
+
+                case 1000:
+                    //軸控
+                    //this.Invoke(new Action<NewDiagPacketArrivedEventArgs>(SetAxisState),e);
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+                            //ABS_X = Original_X - Convert.ToDouble(point_position[21, 0]) + Convert.ToDouble(process_X[process_i]);
+                            //ABS_Y = Original_Y - Convert.ToDouble(point_position[21, 1]) + Convert.ToDouble(process_Y[process_i]);
+                            if (image_error_all[process_2CUT_i] == 1)
+                            {
+                                //二切連動
+                                if (CB_PRRLCN_Switch.Checked && !n_PRR_List.ProbeResult[process_2CUT_i] ||
+                                    CB_NG2Cut_Switch.Checked && NG2Cut[process_2CUT_i])
+                                {
+                                    DEMO_flag_2CUT = 20;
+                                }
+                                else
+                                {
+                                    ABS_X = HeadPOS_X[process_2CUT_i] - Convert.ToDouble(point_position[20, 0]) - Convert.ToDouble(lb_LCC_X.Text);
+                                    ABS_Y = HeadPOS_Y[process_2CUT_i] - Convert.ToDouble(point_position[20, 1]) - Convert.ToDouble(lb_LCC_Y.Text);
+                                    //z越負,測高儀越負
+                                    if (process_compensateZ_2CUT[process_2CUT_i] == "")
+                                    {
+                                        process_compensateZ_2CUT[process_2CUT_i] = " 0";
+                                    }
+                                    ABS_Z = Convert.ToDouble(point_position[22, 0]) - Convert.ToDouble(process_compensateZ_2CUT[process_2CUT_i]);
+                                    Allow_X = Allow_Y = Allow_Z = true;
+
+                                    if (Allow_X)
+                                    {
+                                        this.myController.Commands[this.taskIndex].Motion.MoveAbs(0, ABS_X, 40);
+                                    }
+                                    if (Allow_Y)
+                                    {
+                                        this.myController.Commands[this.taskIndex].Motion.MoveAbs(1, ABS_Y, 40);
+                                    }
+                                    if (Allow_Z)
+                                    {
+                                        this.myController.Commands[this.taskIndex].Motion.MoveAbs(2, ABS_Z, 20);
+                                    }
+                                    DEMO_flag_2CUT = 1001;
+                                }
+                            }
+                            else
+                            {
+                                DEMO_flag_2CUT = 20;
+                            }
+                        }
+                    }
+                    break;
+                case 1001:
+                    //判斷是否到定位
+                    //this.Invoke(new Action<NewDiagPacketArrivedEventArgs>(SetAxisState));
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+
+
+                            DEMO_flag_2CUT = 101;
+                        }
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 1001;
+                    }
+                    break;
+                case 101:
+                    //設定io_u1
+                    //io_bit pattern
+                    instantDoCtrl1.Write(1, (byte)Convert.ToByte(TB_Head_2CUT.Text));
+                    Thread.Sleep(50);
+                    DEMO_flag_2CUT = 102;
+
+                    break;
+                case 102:
+                    //Head
+                    //strat
+                    DO_4_ON();
+                    DEMO_flag_2CUT = -2;//DELAY
+                    break;
+                case 2:
+                    //START復位
+                    //DO_0_OFF_U2();
+                    DEMO_flag_2CUT = 20;
+
+                    break;
+                case 20:
+                    //判斷頭是否有切完
+
+                    //if ((INT_DI_data_U2 & 1) < 1)
+                    //BUSSY
+                    if ((INT_DI_data1 & 1) == 0)
+
+                    {
+                        DO_4_OFF();
+                        //DEMO_flag_2CUT = 21;
+
+                        if (!RB_NS_ShortPitch.Checked && !RB_BR_ShortPitch.Checked)
+                        {
+                            process_2CUT_i++;
+                        }
+                        else
+                        {
+                            process_2CUT_i += 2;
+                        }
+
+                        if (process_2CUT_i >= process_2CUT_END)
+                        {
+                            //DEMO_flag_2CUT = 5;//出料
+                            //開始切尾
+
+                            DEMO_flag_2CUT = 21;
+                        }
+
+                        //else
+                        //{
+                        //	DEMO_flag_2CUT = 1000;//回到軸控,到下一個座標
+                        //}
+                        else
+                        {
+                            counter_pin_num++;
+
+                            if (counter_pin_num >= Convert.ToDouble(tb_PowerFix_Num_2CUT.Text))
+                            {
+                                counter_pin_num = 0;
+                                //power 補償
+                                DEMO_flag_2CUT = 200;
+                            }
+                            else
+                            {
+                                DEMO_flag_2CUT = 1000;
+                            }
+
+
+                        }
+                    }
+                    break;
+                case 21:
+                    //移動到尾端
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+                            //ABS_X = Original_X - Convert.ToDouble(point_position[21, 0]) + Convert.ToDouble(process_X[process_i]);
+                            //ABS_Y = Original_Y - Convert.ToDouble(point_position[21, 1]) + Convert.ToDouble(process_Y[process_i]);
+                            if (image_error_all[process_2CUT_TIP_i] == 1)
+                            {
+                                if (CB_PRRLCN_Switch.Checked && !n_PRR_List.ProbeResult[process_2CUT_TIP_i] ||
+                                    CB_NG2Cut_Switch.Checked && NG2Cut[process_2CUT_TIP_i])
+                                {
+                                    DEMO_flag_2CUT = 26;
+                                }
+                                else
+                                {
+                                    ABS_X = TipPOS_X[process_2CUT_TIP_i] - Convert.ToDouble(point_position[20, 0]) - Convert.ToDouble(lb_LCC_X.Text);
+                                    ABS_Y = TipPOS_Y[process_2CUT_TIP_i] - Convert.ToDouble(point_position[20, 1]) - Convert.ToDouble(lb_LCC_Y.Text);
+                                    //z越負,測高儀越負
+                                    if (process_compensateZ_2CUT[process_2CUT_TIP_i] == "")
+                                    {
+                                        process_compensateZ_2CUT[process_2CUT_TIP_i] = " 0";
+                                    }
+                                    ABS_Z = Convert.ToDouble(point_position[22, 0]) - Convert.ToDouble(process_compensateZ_2CUT[process_2CUT_TIP_i]);
+                                    Allow_X = Allow_Y = Allow_Z = true;
+
+                                    if (Allow_X)
+                                    {
+                                        this.myController.Commands[this.taskIndex].Motion.MoveAbs(0, ABS_X, 40);
+                                    }
+                                    if (Allow_Y)
+                                    {
+                                        this.myController.Commands[this.taskIndex].Motion.MoveAbs(1, ABS_Y, 40);
+                                    }
+                                    if (Allow_Z)
+                                    {
+                                        this.myController.Commands[this.taskIndex].Motion.MoveAbs(2, ABS_Z, 20);
+                                    }
+                                    DEMO_flag_2CUT = 22;
+                                }
+                            }
+                            else
+                            {
+                                DEMO_flag_2CUT = 26;
+                            }
+                        }
+                    }
+
+                    break;
+                case 22:
+                    //判斷值控是否到定位
+                    //this.Invoke(new Action<NewDiagPacketArrivedEventArgs>(SetAxisState));
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+
+
+                            DEMO_flag_2CUT = 23;
+                        }
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 22;
+                    }
+                    break;
+                case 23:
+                    //尾部圖層
+
+                    instantDoCtrl1.Write(1, (byte)Convert.ToByte(TB_END_2CUT.Text));
+                    Thread.Sleep(50);
+                    DEMO_flag_2CUT = 24;
+                    break;
+                case 24:
+                    //tip
+                    //strat
+                    DO_4_ON();
+                    DEMO_flag_2CUT = 25;//DELAY
+                    break;
+                case 25:
+                    //DELAY
+                    if (Counter > 6)
+                    {
+                        Counter = 0;
+                        DEMO_flag_2CUT = 26;
+                    }
+                    else
+                    {
+                        Counter++;
+                        Thread.Sleep(10);
+                        DEMO_flag_2CUT = 25;
+                    }
+                    break;
+                case 26:
+                    //START復位
+                    //DO_0_OFF_U2();
+                    DEMO_flag_2CUT = 3;
+                    break;
+
+                case 3:
+                    //判斷是否切完
+                    //if ((INT_DI_data_U2 & 1) < 1)
+                    //BUSSY
+                    if ((INT_DI_data1 & 1) == 0)
+                    {
+                        DO_4_OFF();
+                        if (!RB_NS_ShortPitch.Checked && !RB_BR_ShortPitch.Checked)
+                        {
+                            process_2CUT_TIP_i++;
+                        }
+                        else
+                        {
+                            process_2CUT_TIP_i += 2;
+                        }
+
+                        if (process_2CUT_TIP_i >= process_2CUT_TIP_END)
+                        {
+                            //DEMO_flag_2CUT = 5;//出料
+
+                            if (cb_smallbox_switch.Checked == true)
+                            {
+                                if (small_TotalNumber_2CUT == 0)
+                                    DEMO_flag_2CUT = 5;
+                                else
+                                    DEMO_flag_2CUT = 4;//出料
+                            }
+                            else
+                            {
+                                DEMO_flag_2CUT = 5;//出料
+                            }
+                        }
+                        else
+                        {
+                            DEMO_flag_2CUT = 21;//回到軸控,到下一個座標
+                        }
+
+
+
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 3;
+                    }
+
+
+                    break;
+                case 4:
+                    //切換至方框圖層
+                    instantDoCtrl1.Write(1, (byte)Convert.ToByte(tb_Smallbox.Text));
+                    Thread.Sleep(50);
+                    DEMO_flag_2CUT = 400;
+                    break;
+                case 400:
+                    //軸控
+                    //this.Invoke(new Action<NewDiagPacketArrivedEventArgs>(SetAxisState),e);
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+                            if (Smallbox_error_flag[process_smallbox_i] == 1)
+                            {
+                                ABS_X = Smallbox_PosX[process_smallbox_i] - Convert.ToDouble(point_position[20, 0]);
+                                ABS_Y = Smallbox_PosY[process_smallbox_i] - Convert.ToDouble(point_position[20, 1]);
+
+                                ABS_Z = Convert.ToDouble(point_position[22, 0]) - Thick_Array_SmallBox[process_smallbox_i];
+                                Allow_X = Allow_Y = Allow_Z = true;
+
+                                if (Allow_X)
+                                {
+                                    this.myController.Commands[this.taskIndex].Motion.MoveAbs(0, ABS_X, 40);
+                                }
+                                if (Allow_Y)
+                                {
+                                    this.myController.Commands[this.taskIndex].Motion.MoveAbs(1, ABS_Y, 40);
+                                }
+                                if (Allow_Z)
+                                {
+                                    this.myController.Commands[this.taskIndex].Motion.MoveAbs(2, ABS_Z, 20);
+                                }
+                                DEMO_flag_2CUT = 401;
+                            }
+                            else
+                            {
+                                process_smallbox_ng++;
+                                DEMO_flag_2CUT = 405;
+                            }
+                        }
+                    }
+                    break;
+                case 401:
+                    //判斷值控是否到定位
+                    //this.Invoke(new Action<NewDiagPacketArrivedEventArgs>(SetAxisState));
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+
+
+                            DEMO_flag_2CUT = 402;
+                        }
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 401;
+                    }
+                    break;
+                case 402:
+                    DO_4_ON();
+                    DEMO_flag_2CUT = 403;
+                    break;
+                case 403:
+                    //DELAY
+                    if (Counter > 6)
+                    {
+                        Counter = 0;
+                        DEMO_flag_2CUT = 404;
+                    }
+                    else
+                    {
+                        Counter++;
+                        Thread.Sleep(10);
+                        DEMO_flag_2CUT = 403;
+                    }
+                    break;
+                case 404:
+                    if ((INT_DI_data1 & 1) == 0)
+                    {
+                        DO_4_OFF();
+
+                        process_smallbox_i++;
+                        if (process_smallbox_i >= small_TotalNumber_2CUT)
+                        {
+
+                            DEMO_flag_2CUT = 5;//出料
+                        }
+                        else
+                        {
+                            DEMO_flag_2CUT = 400;//回到軸控,到下一個座標
+                        }
+
+
+
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 404;
+                    }
+                    break;
+                case 405:
+                    process_smallbox_i++;
+                    if (process_smallbox_i >= small_TotalNumber_2CUT)
+                    {
+
+                        DEMO_flag_2CUT = 5;//出料
+                    }
+                    else
+                    {
+                        DEMO_flag_2CUT = 400;//回到軸控,到下一個座標
+                    }
+
+                    break;
+
+                case 5:
+                    //結束,出料
+                    //this.Invoke(new Action<NewDiagPacketArrivedEventArgs>(SetAxisState));
+                    if (myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 0, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 1, 2000) && myController.Commands.Motion.WaitForMotionDone(Aerotech.A3200.Commands.WaitOption.InPosition, 2, 2000))
+                    {
+                        if (Motion_X && Motion_Y && Motion_Z)
+                        {
+
+                            ABS_X = Convert.ToDouble(point_position[3, 0]);
+                            ABS_Y = Convert.ToDouble(point_position[3, 1]);
+                            ABS_Z = Convert.ToDouble(point_position[3, 2]);
+                            Allow_X = Allow_Y = Allow_Z = true;
+                            //Allow_Z = false;
+                            //MessageBox.Show(i.ToString()+","+ ABS_X.ToString() + ";" + j.ToString()+","+ABS_Y.ToString());
+                            //Aero_thMotionRun_Tick(Motion_Num.Motion_ABS);
+
+                            if (Allow_X)
+                            {
+                                this.myController.Commands[this.taskIndex].Motion.MoveAbs(0, ABS_X, 40);
+                            }
+                            if (Allow_Y)
+                            {
+                                this.myController.Commands[this.taskIndex].Motion.MoveAbs(1, ABS_Y, 40);
+                            }
+                            if (Allow_Z)
+                            {
+                                this.myController.Commands[this.taskIndex].Motion.MoveAbs(2, ABS_Z, 15);
+                            }
+                            currentTime = DateTime.Now;
+                            using (StreamWriter text = new StreamWriter(classSystem.FilePath_Log + LogTime.ToString("yyyyMMdd") + "_Log.ini", true))
+                            {
+                                text.WriteLine(currentTime.ToString("yyyyMMddHHmm") + "  ;  " + "2切加工完成 ");
+                                //sw.Flush();
+                                text.Close();
+                            }
+
+                            //StreamWriter ss2 = new StreamWriter(classSystem.path_WorkList + LogTime.ToString("yyyMMdd") + "_稼動率.ini", true);
+                            //ss2.WriteLine(currentTime.ToString("yyyMMddHHmm") + "  ;  " + "2切加工完成 ");
+                            ////sw.Flush();
+                            //ss2.Close();
+                            DO_1_ON();
+                            DO_2_OFF();
+
+                            //參數紀錄
+                            record_update.End();
+
+                            record_update.Save_Log();
+
+                            record_update.Clear();
+
+                            //MES上報
+                            MES_Waiting(chpt_mes.Description_Message[(int)MES_Description.ProcessEnd]);
+
+                            Thread.Sleep(500);
+
+                            prog_status = "2切完成";
+                            byte[] p = LaserDesk.LaserDesk.HexToByte("");
+                            _sock.Send(LaserDesk.LaserDesk.ParameterCommand(6, p));
+                            START_flag_2CUT = false;
+                            this.Invoke(new dGP_Relese(GP_relese));
+                            DEMO_flag_2CUT = 0;
+
+                            NG2Cut.Clear();
+
+                            if (cb_smallbox_switch.Checked == true && process_smallbox_ng > 0)
+                                MessageBox.Show("方框辨識共有:" + (process_smallbox_ng).ToString() + "個NG");
+
+
+                            if (Demo_Test_2CUT != null)
+                            {
+                                Auto_Load = false;//將掃碼自動載檔旗標取消
+
+                                //20260324冠璋要求重置按鈕按下時路徑都不清除，除非重新刷barcode代入
+                                /*TB_LoadFilePath.Clear();//清除一切路徑檔
+                                TB_LoadFilePath_2CUT.Clear();//清除二切路徑檔
+                                tb_PRRLCN.Clear();//清除二切連棟檔路徑*/
+
+                                Demo_Test_2CUT.Abort();
+                            }
+                        }
+                    }
+                    break;
+                case 6:
+                    break;
+                case 7:
+                    break;
+                case 8:
+                    break;
+                case 9:
+                    break;
+
+            }
+        }
