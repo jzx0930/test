@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>刷牙教學 - 嘴巴區域偵測</title>
+  <title>刷牙教學 - 動態偵測</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -15,7 +15,8 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      background-color: #f0f8ff;
+      background-color: #222;
+      color: white;
     }
     .container {
       position: relative;
@@ -23,89 +24,177 @@
       height: 480px;
       border-radius: 10px;
       overflow: hidden;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
       background-color: #000;
-      margin-top: 20px;
+      margin-top: 10px;
     }
-    /* 將 video 和 canvas 疊加在一起，並做水平鏡像翻轉（像照鏡子一樣） */
     video, canvas {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      transform: scaleX(-1);
+      transform: scaleX(-1); /* 鏡像翻轉 */
     }
-    #loading {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      color: white;
-      font-size: 20px;
-      z-index: 10;
+    
+    /* UI 面板設計 */
+    .ui-panel {
+      width: 640px;
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #333;
+      border-radius: 10px;
+      box-sizing: border-box;
+    }
+    .progress-container {
+      width: 100%;
+      height: 30px;
+      background-color: #555;
+      border-radius: 15px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+      transition: width 0.1s;
+    }
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 16px;
+      color: #00ffcc;
     }
   </style>
 </head>
 <body>
 
-  <h2>🦷 刷牙教學：嘴部定位測試</h2>
+  <h2>🦷 刷牙動作偵測測試</h2>
+  
   <div class="container">
-    <div id="loading">載入 AI 模型與相機中...</div>
-    <video id="input_video" autoplay playsinline></video>
+    <video id="input_video" autoplay playsinline style="display:none;"></video>
     <canvas id="output_canvas" width="640" height="480"></canvas>
+  </div>
+
+  <div class="ui-panel">
+    <div>刷牙進度：<span id="status-text">請對準鏡頭...</span></div>
+    <div class="progress-container">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div class="stats">
+      <span>動態差值 (Sensor Value): <span id="diff-score">0</span></span>
+      <span>閥值 (Threshold): 15000</span>
+    </div>
   </div>
 
   <script>
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const loadingText = document.getElementById('loading');
+    const progressBar = document.getElementById('progress-bar');
+    const diffScoreText = document.getElementById('diff-score');
+    const statusText = document.getElementById('status-text');
 
-    // 當 MediaPipe 辨識出結果時，會呼叫這個函式
+    let lastImageData = null;
+    let brushProgress = 0;
+    const MAX_PROGRESS = 100;
+    const MOTION_THRESHOLD = 15000; // 動態判定閥值，數值越高越難觸發
+
+    // 定義嘴巴周圍的關鍵特徵點 Index
+    const mouthIndices = [0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95, 146, 178, 181, 191, 267, 269, 270, 291, 308, 310, 311, 312, 314, 317, 318, 321, 324, 375, 402, 405, 415];
+
     function onResults(results) {
-      // 隱藏載入文字
-      loadingText.style.display = 'none';
-
       canvasCtx.save();
-      // 清空畫布
-      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      // 將相機的每一幀畫面畫到 canvas 上
+      // 1. 先將原始影像畫到畫布上 (必須在繪製任何線條前先做，以免干擾像素分析)
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      // 如果有偵測到臉部
-      if (results.multiFaceLandmarks) {
-        for (const landmarks of results.multiFaceLandmarks) {
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        statusText.innerText = "偵測到嘴巴，請開始刷牙動作！";
+        const landmarks = results.multiFaceLandmarks[0];
+        
+        // 2. 計算嘴巴區域的 Bounding Box (ROI)
+        let minX = 1, minY = 1, maxX = 0, maxY = 0;
+        mouthIndices.forEach(index => {
+          const pt = landmarks[index];
+          if(pt.x < minX) minX = pt.x;
+          if(pt.y < minY) minY = pt.y;
+          if(pt.x > maxX) maxX = pt.x;
+          if(pt.y > maxY) maxY = pt.y;
+        });
+
+        // 將正規化座標轉換為實際像素座標，並往外擴張 padding 以涵蓋牙刷
+        const padding = 30; 
+        const pxMinX = Math.max(0, Math.floor(minX * canvasElement.width) - padding);
+        const pxMinY = Math.max(0, Math.floor(minY * canvasElement.height) - padding);
+        const pxMaxX = Math.min(canvasElement.width, Math.floor(maxX * canvasElement.width) + padding);
+        const pxMaxY = Math.min(canvasElement.height, Math.floor(maxY * canvasElement.height) + padding);
+        
+        const roiWidth = pxMaxX - pxMinX;
+        const roiHeight = pxMaxY - pxMinY;
+
+        // 3. 動態偵測演算法 (Frame Differencing)
+        if (roiWidth > 0 && roiHeight > 0) {
+          // 擷取當前 ROI 區域的像素資料
+          const currentImageData = canvasCtx.getImageData(pxMinX, pxMinY, roiWidth, roiHeight);
           
-          // 1. 畫出整張臉的輪廓 (淡淡的白線作為參考)
-          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#E0E0E0', lineWidth: 1});
-          
-          // 2. 核心功能：精確畫出嘴唇/牙齒區域 (顯眼的紅線加粗)
-          // FACEMESH_LIPS 包含了上下嘴唇的座標點集合
-          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#FF3366', lineWidth: 4});
-          
+          if (lastImageData && lastImageData.width === roiWidth && lastImageData.height === roiHeight) {
+             let diffScore = 0;
+             // 為了節省效能，我們跳著取樣 (每隔 16 個 Byte 取一次，約等於每 4 個像素取一次)
+             for(let i = 0; i < currentImageData.data.length; i += 16) {
+                 // 只取紅色通道 (R) 的差值作為動態代表，減少計算量
+                 const rDiff = Math.abs(currentImageData.data[i] - lastImageData.data[i]);
+                 diffScore += rDiff;
+             }
+             
+             // 更新 UI 上的動態數值
+             diffScoreText.innerText = diffScore;
+
+             // 4. 狀態判定：如果差值大於閥值，代表有劇烈動作 (刷牙)
+             if (diffScore > MOTION_THRESHOLD) {
+                 brushProgress += 0.5; // 增加進度
+                 if (brushProgress > MAX_PROGRESS) brushProgress = MAX_PROGRESS;
+                 
+                 // 刷牙時，將框線變成綠色表示正確判定
+                 canvasCtx.strokeStyle = '#00ffcc';
+             } else {
+                 canvasCtx.strokeStyle = '#ff3366'; // 沒動作時顯示紅框
+             }
+             
+             progressBar.style.width = brushProgress + '%';
+             if(brushProgress === MAX_PROGRESS) {
+                statusText.innerText = "✨ 刷牙完成！";
+                statusText.style.color = "#00ffcc";
+             }
+          }
+          lastImageData = currentImageData; // 儲存當前幀，供下一幀比對
         }
+
+        // 5. 將 ROI 方塊視覺化畫出來
+        canvasCtx.lineWidth = 3;
+        canvasCtx.strokeRect(pxMinX, pxMinY, roiWidth, roiHeight);
+
+      } else {
+        statusText.innerText = "找不到臉部，請退後一點...";
       }
       canvasCtx.restore();
     }
 
-    // 初始化 FaceMesh 模型
     const faceMesh = new FaceMesh({locateFile: (file) => {
       return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
     }});
     
-    // 設定模型參數
     faceMesh.setOptions({
-      maxNumFaces: 1,           // 只偵測一張臉
-      refineLandmarks: true,    // 提高嘴唇和眼睛的精確度
+      maxNumFaces: 1,
+      refineLandmarks: true,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
     
-    // 綁定結果處理函式
     faceMesh.onResults(onResults);
 
-    // 初始化相機並將畫面送入模型
     const camera = new Camera(videoElement, {
       onFrame: async () => {
         await faceMesh.send({image: videoElement});
@@ -114,7 +203,6 @@
       height: 480
     });
     
-    // 啟動相機
     camera.start();
   </script>
 </body>
