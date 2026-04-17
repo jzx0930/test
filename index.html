@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>刷牙教學 - 動態偵測</title>
+  <title>刷牙教學 - 動態偵測 (改良版)</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -17,34 +17,19 @@
       align-items: center;
       background-color: #222;
       color: white;
-    }
-    .container {
-      position: relative;
-      width: 640px;
-      height: 480px;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-      background-color: #000;
-      margin-top: 10px;
-    }
-    video, canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      transform: scaleX(-1); /* 鏡像翻轉 */
+      margin: 0;
+      padding: 20px;
     }
     
-    /* UI 面板設計 */
+    /* UI 面板移到上方，並加上更顯眼的設計 */
     .ui-panel {
       width: 640px;
-      margin-top: 20px;
       padding: 15px;
       background-color: #333;
       border-radius: 10px;
       box-sizing: border-box;
+      margin-bottom: 15px; /* 與下方視訊拉開距離 */
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
     }
     .progress-container {
       width: 100%;
@@ -68,26 +53,59 @@
       font-size: 16px;
       color: #00ffcc;
     }
+
+    /* 視訊容器 */
+    .container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      background-color: #000;
+    }
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1); /* 鏡像翻轉 */
+    }
+
+    /* 載入中的文字提示 */
+    #loading-msg {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 24px;
+      font-weight: bold;
+      color: #ffcc00;
+      z-index: 10;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
 
-  <h2>🦷 刷牙動作偵測測試</h2>
+  <h2>🦷 刷牙動作偵測</h2>
   
-  <div class="container">
-    <video id="input_video" autoplay playsinline style="display:none;"></video>
-    <canvas id="output_canvas" width="640" height="480"></canvas>
-  </div>
-
   <div class="ui-panel">
-    <div>刷牙進度：<span id="status-text">請對準鏡頭...</span></div>
+    <div style="font-size: 18px; font-weight: bold;">狀態：<span id="status-text" style="color: #ffcc00;">等待模型載入...</span></div>
     <div class="progress-container">
       <div class="progress-bar" id="progress-bar"></div>
     </div>
     <div class="stats">
-      <span>動態差值 (Sensor Value): <span id="diff-score">0</span></span>
-      <span>閥值 (Threshold): 15000</span>
+      <span>動態差值: <span id="diff-score" style="font-size: 20px; color: #fff;">0</span></span>
+      <span>閥值: 15000</span>
     </div>
+  </div>
+
+  <div class="container">
+    <div id="loading-msg">⏳ AI 模型下載與啟動中...<br><span style="font-size: 16px; color: #aaa;">(首次開啟約需幾秒鐘，請允許相機權限)</span></div>
+    <video id="input_video" autoplay playsinline style="display:none;"></video>
+    <canvas id="output_canvas" width="640" height="480"></canvas>
   </div>
 
   <script>
@@ -97,25 +115,30 @@
     const progressBar = document.getElementById('progress-bar');
     const diffScoreText = document.getElementById('diff-score');
     const statusText = document.getElementById('status-text');
+    const loadingMsg = document.getElementById('loading-msg');
 
     let lastImageData = null;
     let brushProgress = 0;
     const MAX_PROGRESS = 100;
-    const MOTION_THRESHOLD = 15000; // 動態判定閥值，數值越高越難觸發
+    const MOTION_THRESHOLD = 15000; 
 
-    // 定義嘴巴周圍的關鍵特徵點 Index
     const mouthIndices = [0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95, 146, 178, 181, 191, 267, 269, 270, 291, 308, 310, 311, 312, 314, 317, 318, 321, 324, 375, 402, 405, 415];
 
     function onResults(results) {
+      // 隱藏載入文字
+      loadingMsg.style.display = 'none';
+
       canvasCtx.save();
-      // 1. 先將原始影像畫到畫布上 (必須在繪製任何線條前先做，以免干擾像素分析)
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        statusText.innerText = "偵測到嘴巴，請開始刷牙動作！";
+        if(brushProgress < MAX_PROGRESS) {
+            statusText.innerText = "✅ 偵測到嘴巴，請在紅框內來回刷牙！";
+            statusText.style.color = "#00ffcc";
+        }
+        
         const landmarks = results.multiFaceLandmarks[0];
         
-        // 2. 計算嘴巴區域的 Bounding Box (ROI)
         let minX = 1, minY = 1, maxX = 0, maxY = 0;
         mouthIndices.forEach(index => {
           const pt = landmarks[index];
@@ -125,7 +148,6 @@
           if(pt.y > maxY) maxY = pt.y;
         });
 
-        // 將正規化座標轉換為實際像素座標，並往外擴張 padding 以涵蓋牙刷
         const padding = 30; 
         const pxMinX = Math.max(0, Math.floor(minX * canvasElement.width) - padding);
         const pxMinY = Math.max(0, Math.floor(minY * canvasElement.height) - padding);
@@ -135,49 +157,40 @@
         const roiWidth = pxMaxX - pxMinX;
         const roiHeight = pxMaxY - pxMinY;
 
-        // 3. 動態偵測演算法 (Frame Differencing)
         if (roiWidth > 0 && roiHeight > 0) {
-          // 擷取當前 ROI 區域的像素資料
           const currentImageData = canvasCtx.getImageData(pxMinX, pxMinY, roiWidth, roiHeight);
           
           if (lastImageData && lastImageData.width === roiWidth && lastImageData.height === roiHeight) {
              let diffScore = 0;
-             // 為了節省效能，我們跳著取樣 (每隔 16 個 Byte 取一次，約等於每 4 個像素取一次)
              for(let i = 0; i < currentImageData.data.length; i += 16) {
-                 // 只取紅色通道 (R) 的差值作為動態代表，減少計算量
-                 const rDiff = Math.abs(currentImageData.data[i] - lastImageData.data[i]);
-                 diffScore += rDiff;
+                 diffScore += Math.abs(currentImageData.data[i] - lastImageData.data[i]);
              }
              
-             // 更新 UI 上的動態數值
              diffScoreText.innerText = diffScore;
 
-             // 4. 狀態判定：如果差值大於閥值，代表有劇烈動作 (刷牙)
              if (diffScore > MOTION_THRESHOLD) {
-                 brushProgress += 0.5; // 增加進度
+                 brushProgress += 0.5; 
                  if (brushProgress > MAX_PROGRESS) brushProgress = MAX_PROGRESS;
-                 
-                 // 刷牙時，將框線變成綠色表示正確判定
-                 canvasCtx.strokeStyle = '#00ffcc';
+                 canvasCtx.strokeStyle = '#00ffcc'; // 綠框表示有刷牙動作
              } else {
-                 canvasCtx.strokeStyle = '#ff3366'; // 沒動作時顯示紅框
+                 canvasCtx.strokeStyle = '#ff3366'; // 紅框表示靜止
              }
              
              progressBar.style.width = brushProgress + '%';
-             if(brushProgress === MAX_PROGRESS) {
+             if(brushProgress >= MAX_PROGRESS) {
                 statusText.innerText = "✨ 刷牙完成！";
-                statusText.style.color = "#00ffcc";
+                statusText.style.color = "#ffcc00";
              }
           }
-          lastImageData = currentImageData; // 儲存當前幀，供下一幀比對
+          lastImageData = currentImageData; 
         }
 
-        // 5. 將 ROI 方塊視覺化畫出來
         canvasCtx.lineWidth = 3;
         canvasCtx.strokeRect(pxMinX, pxMinY, roiWidth, roiHeight);
 
       } else {
-        statusText.innerText = "找不到臉部，請退後一點...";
+        statusText.innerText = "⚠️ 找不到臉部，請對準鏡頭...";
+        statusText.style.color = "#ff3366";
       }
       canvasCtx.restore();
     }
