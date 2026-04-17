@@ -138,25 +138,21 @@
     let brushProgress = 0;
     const MAX_PROGRESS = 100;
     const MOTION_THRESHOLD = 15000; 
-    let isAligned = false; // 對齊狀態標記
+    let isAligned = false; 
 
-    // 定義固定頭型準心的參數 (像素座標，適用於 640x480)
     const guideOval = {
-      cx: 320,  // 圓心 X (畫面正中央)
-      cy: 220,  // 圓心 Y (稍微偏上)
-      rx: 120,  // X 半徑
-      ry: 160   // Y 半徑
+      cx: 320,  
+      cy: 220,  
+      rx: 120,  
+      ry: 160   
     };
 
     const mouthIndices = [0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95, 146, 178, 181, 191, 267, 269, 270, 291, 308, 310, 311, 312, 314, 317, 318, 321, 324, 375, 402, 405, 415];
 
-    // 新增：繪製固定頭型準心的函式
     function drawStaticGuide() {
       canvasCtx.save();
       
-      // 設定準心樣式
       canvasCtx.lineWidth = 5;
-      // 根據對齊狀態切換顏色
       canvasCtx.strokeStyle = isAligned ? 'rgba(0, 255, 204, 0.8)' : 'rgba(255, 255, 255, 0.3)';
       
       // 1. 畫頭部橢圓
@@ -173,14 +169,12 @@
       canvasCtx.quadraticCurveTo(guideOval.cx + guideOval.rx + 100, 480, guideOval.cx + 250, 480);
       canvasCtx.stroke();
       
-      ctx.restore();
+      // 修正：將 ctx 改為正確的 canvasCtx
+      canvasCtx.restore(); 
     }
 
-    // 新增：判定臉部是否與準心對齊的函式
     function checkFaceAlignment(landmarks) {
-      // 計算臉部Bounding Box的中心點與大小 (用部分關鍵點粗略估算)
       let minX = 1, minY = 1, maxX = 0, maxY = 0;
-      // 用 4, 152, 234, 454 分別代表鼻尖、下巴最底、左側臉、右側臉
       [4, 152, 234, 454].forEach(index => {
           const pt = landmarks[index];
           if(pt.x < minX) minX = pt.x;
@@ -189,22 +183,19 @@
           if(pt.y > maxY) maxY = pt.y;
       });
       
-      // 轉換成像素座標
       const faceCenterPx = {
           x: ((minX + maxX) / 2) * canvasElement.width,
           y: ((minY + maxY) / 2) * canvasElement.height
       };
       const faceWidthPx = (maxX - minX) * canvasElement.width;
       
-      // 判定條件 1：臉部中心點要在目標圓心附近 (容許誤差)
       const dx = Math.abs(faceCenterPx.x - guideOval.cx);
       const dy = Math.abs(faceCenterPx.y - guideOval.cy);
-      const centerTolerance = 40; // 容許誤差像素
+      const centerTolerance = 40; 
       const isCenterOK = (dx < centerTolerance && dy < centerTolerance);
       
-      // 判定條件 2：臉部的寬度要符合準心的一定比例
       const targetWidth = guideOval.rx * 1.8;
-      const sizeTolerance = 0.25; // 容許尺寸誤差比例 (25%)
+      const sizeTolerance = 0.25; 
       const isSizeOK = (Math.abs(faceWidthPx - targetWidth) < targetWidth * sizeTolerance);
 
       return (isCenterOK && isSizeOK);
@@ -213,17 +204,15 @@
     function onResults(results) {
       loadingMsg.style.display = 'none';
       canvasCtx.save();
-      // 先畫原始影像
+      
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
         
-        // --- 核心邏輯：先判定對齊狀態 ---
         isAligned = checkFaceAlignment(landmarks);
 
         if (isAligned) {
-            // 對齊成功：綠燈、啟用動態偵測
             statusLamp.classList.add('active');
             if(brushProgress < MAX_PROGRESS) {
                 statusText.innerText = "綠燈，開始刷牙動作！";
@@ -233,7 +222,6 @@
                 statusText.style.color = "#ffcc00";
             }
 
-            // --- 執行原本的刷牙動態偵測 (只在對齊成功時執行) ---
             let minX = 1, minY = 1, maxX = 0, maxY = 0;
             mouthIndices.forEach(index => {
               const pt = landmarks[index];
@@ -261,7 +249,6 @@
                      diffScore += Math.abs(currentImageData.data[i] - lastImageData.data[i]);
                  }
                  
-                 // 如果有劇烈動作 (刷牙)
                  if (diffScore > MOTION_THRESHOLD) {
                      brushProgress += 0.5; 
                      if (brushProgress > MAX_PROGRESS) brushProgress = MAX_PROGRESS;
@@ -273,26 +260,23 @@
               lastImageData = currentImageData; 
             }
 
-            // 對齊成功時，用綠色框標記嘴巴區域
             canvasCtx.strokeStyle = 'rgba(0, 255, 204, 0.8)';
             canvasCtx.lineWidth = 3;
             canvasCtx.strokeRect(pxMinX, pxMinY, roiWidth, roiHeight);
 
         } else {
-            // 未對齊：顯示警示狀態
             statusLamp.classList.remove('active');
             statusText.innerText = "請將臉部對齊準心輪廓...";
             statusText.style.color = "#aaa";
         }
 
       } else {
-        isAligned = false; // 沒偵測到臉視為未對齊
+        isAligned = false; 
         statusLamp.classList.remove('active');
         statusText.innerText = "找不到臉部，請對準鏡頭...";
         statusText.style.color = "#ff3366";
       }
 
-      // 3. 最後，將固定準心畫在影像上方
       drawStaticGuide();
 
       canvasCtx.restore();
