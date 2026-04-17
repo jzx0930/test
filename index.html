@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>刷牙教學 - 嘴巴區域偵測</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #f0f8ff;
+    }
+    .container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      background-color: #000;
+      margin-top: 20px;
+    }
+    /* 將 video 和 canvas 疊加在一起，並做水平鏡像翻轉（像照鏡子一樣） */
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 20px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>🦷 刷牙教學：嘴部定位測試</h2>
+  <div class="container">
+    <div id="loading">載入 AI 模型與相機中...</div>
+    <video id="input_video" autoplay playsinline></video>
+    <canvas id="output_canvas" width="640" height="480"></canvas>
+  </div>
+
+  <script>
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const loadingText = document.getElementById('loading');
+
+    // 當 MediaPipe 辨識出結果時，會呼叫這個函式
+    function onResults(results) {
+      // 隱藏載入文字
+      loadingText.style.display = 'none';
+
+      canvasCtx.save();
+      // 清空畫布
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      // 將相機的每一幀畫面畫到 canvas 上
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      // 如果有偵測到臉部
+      if (results.multiFaceLandmarks) {
+        for (const landmarks of results.multiFaceLandmarks) {
+          
+          // 1. 畫出整張臉的輪廓 (淡淡的白線作為參考)
+          drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#E0E0E0', lineWidth: 1});
+          
+          // 2. 核心功能：精確畫出嘴唇/牙齒區域 (顯眼的紅線加粗)
+          // FACEMESH_LIPS 包含了上下嘴唇的座標點集合
+          drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#FF3366', lineWidth: 4});
+          
+        }
+      }
+      canvasCtx.restore();
+    }
+
+    // 初始化 FaceMesh 模型
+    const faceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+    
+    // 設定模型參數
+    faceMesh.setOptions({
+      maxNumFaces: 1,           // 只偵測一張臉
+      refineLandmarks: true,    // 提高嘴唇和眼睛的精確度
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    
+    // 綁定結果處理函式
+    faceMesh.onResults(onResults);
+
+    // 初始化相機並將畫面送入模型
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+    
+    // 啟動相機
+    camera.start();
+  </script>
+</body>
+</html>
