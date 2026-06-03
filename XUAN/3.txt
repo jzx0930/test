@@ -1,0 +1,73 @@
+#region 組件 ML.Component.Scanhead.Arges.Driver, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+// D:\Program\原程式與壓縮檔\LaserProcess_LCH_v26.02.23.15\LaserScanner.Arges\ML.Component.Scanhead.Arges\ML.Component.Scanhead.Arges.Driver.dll
+#endregion
+
+using Microlution.Component.Scanhead.Arges.Shared;
+using System;
+using System.Collections.Generic;
+
+namespace Microlution.Component.Scanhead.Arges.Driver
+{
+    [System.ComponentModel.Composition.ExportAttribute]
+    public class ArgesScanheadDriver : IArgesScanheadDriver
+    {
+        public ArgesScanheadDriver();
+
+        public Dictionary<string, byte[]> ArlData { get; set; }
+
+        public event Action<string> OnError;
+        public event Action<int> OnPLCChanged;
+        public event Action<string, object, VAR_TYPE> OnValueChanged;
+        public event Action<string> OnSystemMessage;
+
+        public int abortJob();
+        public bool AbortJob();
+        public bool BulkWrite(IList<(string, string)> toWrite);
+        public bool ClearJobs();
+        public int clearJobs();
+        public int commitVariableChanges();
+        public bool CommitVariableChanges();
+        public bool Connect(string IP, short PORT, bool ENABLE_CACHE, bool SET_LOG_DIR, bool REG_SYS_MSG);
+        public bool Connect();
+        public bool Connect(string IP, short PORT);
+        public void ConnectSSH(string IP);
+        public bool CreateVariable(string variableName, VAR_TYPE variableType);
+        public bool DeleteJobByName(string jobName);
+        public bool Disconnect();
+        public string GetFirmwareVersion();
+        public string GetJobFileFormat();
+        public bool GetJobFilePath(string JobName, out string JobFilePath);
+        public List<string> GetJobNames();
+        public bool GetJobNames(out List<string> Jobs);
+        public string GetLastError();
+        public string GetLibVersion();
+        public VAR_TYPE GetNodeType(string nodeName);
+        public bool GetVariable(string variableName, VAR_TYPE variableType, out string newValue);
+        public bool LoadDataXMLFile(string file);
+        public bool LoadDistortion(string file);
+        public bool LoadJob(string file);
+        public bool LoadJobFromFile(string file);
+        public bool PingController();
+        public bool RegisterWatch(string variableName, VAR_TYPE variableType);
+        public bool RenameJob(int jobIndex, string newName);
+        public int renameJobOnController(int index, string newName);
+        public bool ResetController();
+        public bool SaveJob(string job, string file);
+        public bool SaveJob(string jobName);
+        public bool SelectJob(int jobIndex);
+        public bool SelectJobByName(string jobName);
+        public void SetArlSource(DataSourceType source);
+        public bool SetDeviceManaged(string deviceName);
+        public bool SetDeviceUnmanaged(string deviceName);
+        public bool SetVariable(string variableName, object variableValue, VAR_TYPE variableType, int ByteSwap = 0);
+        public bool ShutdownControllerViaSSH();
+        public int stageVariableChange(string name, string value, VAR_TYPE type = VAR_TYPE.VT_INV);
+        public bool StageVariableChange(string variableName, object variableValue, VAR_TYPE variableType);
+        public int startJob();
+        public bool StartJob();
+        public int stopJob();
+        public bool StopJob();
+        public bool TestPath(string nodePath);
+        public bool updateTime();
+    }
+}

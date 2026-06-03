@@ -1,0 +1,1104 @@
+// 修改建議 [針對 cite: 191-192 處]
+if (reconnect_state == 1 && Processing_projects == 1)
+{
+    queueCmds = new Queue<QueueCmd>(reconnect_state_queueCmds);
+}
+else
+{
+    // 關鍵修改：建立新實體，確保不抽乾 data._QueueCmds
+    queueCmds = new Queue<QueueCmd>(data._QueueCmds); 
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+private void BW_AutoProcess_DoWork(object sender, DoWorkEventArgs e)
+        {
+
+            #region Check before Processing
+
+            // Check LockDoor
+            if (!_stepFlags[(int)Step.s5])
+            {
+                if (_isSafetyInterlock)
+                {
+                    MessageBox.Show("電子門鎖狀態異常，請確認門板是否正確闔上並啟動上鎖。", "Error！！");
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            // Check ThickProcess
+            if (!_stepFlags[(int)Step.s6])
+            {
+                MessageBox.Show("測導板厚度狀態異常，請確認是否已執行過。", "Error！！");
+                e.Cancel = true;
+                return;
+            }
+
+            // Check MonitorStatus
+            if (_isSysMonitorFailed)
+            {
+                MessageBox.Show("系統監控狀態異常，請確認設備裝置功能，並點擊「重置 Reset」。", "Error！！");
+                e.Cancel = true;
+
+                //MES 故障狀態
+                if (_ConfigSystem._ConnectSetting.ChptMES && SendErr_ToMES_Req)
+                {
+                    SendErr_ToMES_Req = false;
+                    Description = "故障與維修";
+                    //[BM:將機台資訊傳送給MES]
+
+                    _CHPT_MES.Send_MES_Data(EquipmentNo, (int)EquipmentState.Error, UserNo, Description, IsEQPTrigger, _CHPT_MES.Batch_Number);
+                }
+              
+                return;
+            }
+
+            #endregion
+
+            #region Initialization
+
+
+            // Disable GUI Controls
+            //EnableGUIMotionControls(false);
+
+            // Disable UI control
+            enableUIGroup(false);
+
+            // Get NC code data
+            NCScriptParser data = _NCParser;
+            if (_isSysSimulated) 
+            {
+            string NCParser_Cagila_CsvPath = Path.Combine(_NCParser._ProjectDirectory, "ProgramObjects", "NCParser" + ".csv");   // 組合對應的解析結果CSV儲存路徑
+            using (StreamWriter stream = new StreamWriter(NCParser_Cagila_CsvPath, false))                         // 建立輸出串流並覆寫模式開啟檔案
+            {
+                stream.WriteLine("PropertyName,Value"); // ⇦ 表頭列：屬性名稱與對應值
+
+                var props = data.GetType().GetProperties(); // ⇦ 取得 data 物件的所有屬性（public）
+
+                foreach (var prop in props)
+                {
+                    object value = prop.GetValue(data); // ⇦ 取出屬性值
+
+                    if (value == null)
+                    {
+                        stream.WriteLine($"{prop.Name},null"); // ⇦ 若為 null 則記錄屬性名稱與 null 字串
+                    }
+                }
+
+                var fields = data.GetType().GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public); // ⇦ 若你還要抓取欄位（不是屬性）
+
+                stream.WriteLine("FieldName,Value"); // ⇦ 如果你只抓欄位（Fields）
+
+                foreach (var field in fields)
+                {
+                    object value = field.GetValue(data); // ⇦ 取出欄位值
+
+                    if (value == null)
+                    {
+                        stream.WriteLine($"{field.Name},null"); // ⇦ 若欄位為 null 則記錄
+                    }
+                }
+            }
+            }
+            // Evaluate total number of feature
+            int count = data._DDS_RowCount;
+            _NbrOfProcess_Total = 0;
+            _NbrOfProcess_Done = 0;
+            _NbrOfFeature_Total = 0;
+            _NbrOfFeature_Done = 0;
+
+            //解析NC檔
+            if (!chk_RD_NCfile.Checked)
+            {
+                //RD手動模式
+                _NbrOfFeature_Total = data._NewDrillFeatures.Length;
+               
+            }
+            _NbrOfProcess_Total = _NbrOfFeature_Total + data._QueueCmds.Count;
+
+            // Process parameters
+            int[] axisIndexZ = { (int)MotionAxis.Z };
+            int[] axisIndexXY = { (int)MotionAxis.X, (int)MotionAxis.Y };
+            int[] axisAllIndexes = { (int)MotionAxis.X, (int)MotionAxis.Y, (int)MotionAxis.Z };
+            double targetPositionX;
+            double targetPositionY;
+            double LP_Gain = _ConfigProcess._LaserParam_Convert.Gain;
+            double LP_Offset = _ConfigProcess._LaserParam_Convert.Offset;
+            double MP_Gain = _ConfigProcess._MotionParam_Convert.Gain;
+            double MP_Offset = _ConfigProcess._MotionParam_Convert.Offset;
+            bool enableWarmup = _ConfigProcess._IsAutoProcessWarmup;
+            bool enableSuspend = _ConfigProcess._IsAutoProcessSuspend;
+            bool enableHold = _ConfigProcess._IsAutoProcessHold;          
+            bool enblePowerCheck = _ConfigSystem._ConnectSetting.Powermeter;
+            double PowerCheck_USL = _ConfigSystem._AutoPowerCheck_USL;
+            double PowerCheck_LSL = _ConfigSystem._AutoPowerCheck_LSL;
+            double PowerCheck_value = _ConfigSystem._AutoPowerCheck_value;
+            double PowerCheck_Ofs = 0;
+
+            int warmup_TimeToWait = _ConfigProcess._Warmup_TimeToWait * 1000;   // Convert sec to ms
+            int suspend_IntervalTime = _ConfigProcess._Suspend_IntervalTime * 1000;   // Convert sec to ms
+            int hold_IntervalTime = _ConfigProcess._Hold_IntervalTime * 1000;   // Convert sec to ms
+            int suspend_TimeToWait = _ConfigProcess._Suspend_TimeToWait * 1000;   // Convert sec to ms
+            int hold_TimeToWait = _ConfigProcess._Hold_TimeToWait * 1000;   // Convert sec to ms
+
+            int retrycount = 0;
+
+            double laserPowerPct = 0;
+            double CutSpeed = 0;
+            double FastSpeed = 0;
+            double _offsetZ = 0;
+            double resultdistance = 0.0;
+            double _OutputPower = 0.0;
+            bool ProbeFinish = false;
+            bool LinearZFinish = false;
+
+
+
+
+            Stopwatch stopwatch_Warmup = new Stopwatch();
+            Stopwatch stopwatch_Suspend = new Stopwatch();
+            Stopwatch stopwatch_Hold = new Stopwatch();
+            //double lastPosition_X, lastPosition_Y, lastPosition_Z;
+
+            _process_Offset_X = _ConfigEquip._OrgPoint.X - _ConfigEquip._RelPosition_Laser2Camera.X;
+            _process_Offset_Y = _ConfigEquip._OrgPoint.Y - _ConfigEquip._RelPosition_Laser2Camera.Y;
+
+
+            // Initialization process
+            // IO display flag
+            _isProcessing = true;
+
+
+            // Start Process Elapsed Time
+            _stopwatch_ElapsedTime.Start();
+
+            // ProcessGas ON 開啟氮氣
+            //enableProcessGas(true);
+
+            // Open Vacuum 開啟真空
+            enableChuckVacuum(true);
+
+            // 0. Initial setup
+            // G00:Rapid position
+            // G90: Absolute mode
+            // G21: Units selection = millimeter
+            // G17: XY plane
+            string code = "G00 G90 G17";    //G21 failed???
+            executeGCode(code);
+
+            //[BM:暖機流程]
+            if (enableWarmup) // Check Warm-up or not 加工前暖機
+            {
+                // Write Process
+                writeProcess("Step7", "加工流程暖機開始");
+
+                _Laser.ChangePPDivider(1);
+                Thread.Sleep(100);
+
+                // Change Laser power
+                //雷射功率補償功能開啟
+                if (enblePowerCheck)                  
+                    laserPowerPct = laserParamConvert(data._LP_PowerPct[data._Op_LaserParamSet[0]], LP_Gain, LP_Offset);
+                else
+                    laserPowerPct = 2;
+
+                    // Set Laser Output Power
+                    SetLaserPowerPercentage(laserPowerPct);
+
+                // Change LaserScanner File 讀取振鏡DryRunJob.jobx檔案
+                try
+                {
+                    //雷射功率補償功能開啟
+                    if (enblePowerCheck)
+                        uploadJob("Powermeter");
+                    else
+                        uploadJob("DryRunJob");
+                }
+                catch (Exception)
+                {
+                    MessageBox.Show("載入刀具錯誤，請確認是否有這項刀具。", "Error！！");
+                    e.Cancel = true;
+                    return;
+                }
+
+                // Move to PowerMonitor position                
+                linearMove(_ConfigEquip._Position_PowerMonitor.X, _ConfigEquip._Position_PowerMonitor.Y, 50);
+
+                // Wait in position
+                waitMotionDone(axisIndexXY, 10000);
+
+                btn_Move_Position_PowerMonitor_Click(this, null);
+
+                // Wait in position
+                waitMotionDone(axisIndexXY, 10000);
+
+                // Do Laser cutting
+                DoLaserCutting();
+
+                // Start stopwatch
+                stopwatch_Warmup.Start();
+
+                while (stopwatch_Warmup.ElapsedMilliseconds < warmup_TimeToWait)
+                {
+                    // Check cancel
+                    if (BW_AutoProcess.CancellationPending)
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+                    Thread.Sleep(1000);
+                }
+
+
+                // Write Process
+                writeProcess("Step7", "加工流程暖機結束");
+            }
+            // Disable UI control
+            enableUIGroup(false);
+
+            //加工前確認雷射功率
+            if (enblePowerCheck)
+            {
+                // Write Process
+                writeProcess("Step7", "雷射功率檢查開始");
+
+                //暖機功能未開啟
+                if (!enableWarmup)
+                {
+                    _Laser.ChangePPDivider(1);
+                    Thread.Sleep(100);
+
+                    // Change Laser power
+                    laserPowerPct = laserParamConvert(data._LP_PowerPct[data._Op_LaserParamSet[0]], LP_Gain, LP_Offset);
+
+                    // Set Laser Output Power
+                    SetLaserPowerPercentage(laserPowerPct);
+
+                    // Change LaserScanner File 讀取振鏡DryRunJob.jobx檔案
+                    try
+                    {
+                        uploadJob("Powermeter");
+                    }
+                    catch (Exception)
+                    {
+                        MessageBox.Show("載入刀具錯誤，請確認是否有這項刀具。", "Error！！");
+                        e.Cancel = true;
+                        return;
+                    }
+
+                    // Move to PowerMonitor position
+                    
+                    linearMove(_ConfigEquip._Position_PowerMonitor.X, _ConfigEquip._Position_PowerMonitor.Y, 50);
+
+                    // Wait in position
+                    waitMotionDone(axisIndexXY, 10000);
+
+                    btn_Move_Position_PowerMonitor_Click(this, null);
+
+                    // Wait in position
+                    waitMotionDone(axisIndexXY, 10000);
+
+                    // Do Laser cutting
+                    DoLaserCutting();
+
+                    // Disable UI control
+                    enableUIGroup(false);
+
+                    // Start stopwatch
+                    stopwatch_Warmup.Start();
+                }
+
+                //取得雷射功率(W)
+                _isPowermeterBusy = true;
+                _OutputPower = _Powermeter.measurementStr;    // Convert Unit from W              
+                _isPowermeterBusy = false;
+
+
+                //功率量測實際值小於設定值進行功率補償(W)  
+                while (_OutputPower < PowerCheck_value)
+                {                     
+                    if (laserPowerPct <= PowerCheck_USL &&  laserPowerPct>= PowerCheck_LSL)
+                    {
+                        //換算功率補償% = 預設值(W) - 量測值(W) / 0.06W(大約功率1% =0.06W)
+                        PowerCheck_Ofs = (PowerCheck_value - _OutputPower) / 0.06;
+                        //四捨五入為整數
+                        PowerCheck_Ofs = Math.Round(PowerCheck_Ofs, 1);
+                        //雷射功率補償
+                        laserPowerPct = Math.Round(laserPowerPct + PowerCheck_Ofs,1);
+                        // Set Laser Output Power
+                        SetLaserPowerPercentage(laserPowerPct);
+
+                        Thread.Sleep(5000);
+
+                        //功率計取得雷射功率(W)
+                        _OutputPower = _Powermeter.measurementStr;    // Convert Unit from W
+
+                        // Write Log
+                        writeEvent("AutoPowerCheck", "補償完雷射功率(W)： "+ _OutputPower.ToString());
+                    }
+                    else
+                    {
+                        //Stop Laser cutting
+                        StopLaserCutting();
+                        MessageBox.Show("雷射功率補償異常，補償完後超出上下限，請確認雷射功率。", "Error！！");
+                        e.Cancel = true;
+                        return;
+                    }
+
+                    // Check cancel
+                    if (BW_AutoProcess.CancellationPending)
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+                    Thread.Sleep(1000);
+                }
+
+                if (laserPowerPct >= PowerCheck_USL || laserPowerPct <= PowerCheck_LSL)
+                {
+                    //Stop Laser cutting
+                    StopLaserCutting();
+                    MessageBox.Show("雷射功率補償異常，補償完後超出上下限，請確認雷射功率。", "Error！！");
+                    e.Cancel = true;
+                    return;
+                }
+
+                // Write Process
+                writeProcess("Step7", "雷射功率檢查結束");
+            }
+
+            //Stop Laser cutting
+            StopLaserCutting();
+
+            // ProcessGas ON 開啟氮氣
+            enableProcessGas(true);
+
+            // Set software origin based on offset
+            //小數點後四位四捨五入
+            targetPositionX = Math.Round(_process_Offset_X, 4);
+            targetPositionY = Math.Round(_process_Offset_Y, 4);
+
+            // Move to target position
+            linearMove(targetPositionX, targetPositionY, _ConfigEquip._Velocity_Default.X);
+
+            // Wait in position
+            waitMotionDone(axisIndexXY, 10000);
+
+            //[BM:G-CODE-將目前位置設定為軟體原點（偏移量）]
+            // Set current position as Software origin (Offset)
+            code = "G92 X0 Y0";
+            executeGCode(code);
+
+            #endregion
+
+            bool keep = true;
+            while (keep)
+            {
+
+            #region Feature Process
+            // [Feature process]
+            if (_NbrOfFeature_Total == 0)
+            {
+                //解析NC檔 RD手動模式
+                if (!chk_RD_NCfile.Checked)
+                {
+                    // Write Log
+                    writeEvent("自動流程", "加工微孔略過");
+                    // Write Process
+                    writeProcess("Step7", "加工流程微孔略過 (總數 = 0)");
+                    //[BM:自訂Log紀錄內容-手動研發]
+                    if (_AutoProcessLog_flag)
+                        writeEventLog_Automatic_processing("加工流程微孔會被略過", $"研發手動NC檔已被勾選");
+                }
+            }
+            //[BM:斷線從連復工-若是於微孔以外的地方當機重連回來 要跳過微孔加工]
+            else if (reconnect_state==1&& Processing_projects == 1)//有重連且是在做微孔以外加工
+            {
+                // Write Log
+                writeEvent("自動流程", "加工微孔略過(已加工完成振鏡斷線重連進行加工)");
+                // Write Process
+                writeProcess("Step7", "加工流程微孔略過 (總數 = 0)");
+                //[BM:自訂Log紀錄內容-手動研發]
+                if (_AutoProcessLog_flag)
+                    writeEventLog_Automatic_processing("加工流程微孔會被略過", $"已加工完成振鏡斷線重連進行加工");
+            }
+            else
+            {
+                if (BW_AutoProcess.CancellationPending)  // Check cancel
+                {
+                    e.Cancel = true;
+                    return;
+                }
+                writeEvent("自動流程", "微孔加工開始");    // Write Log
+                writeProcess("Step7", "加工流程微孔開始 (總數 = " + _NbrOfFeature_Total + ")");  // Write Process
+
+
+                //[BM:自訂Log紀錄內容-微孔加工開始]
+                if (_AutoProcessLog_flag)
+                    writeEventLog_Automatic_processing("加工流程微孔開始", $"總數 =  ({_NbrOfFeature_Total  })");
+
+                // Start stopwatch
+                stopwatch_Suspend.Start();
+                stopwatch_Hold.Start();
+
+                // Start processing
+                double featureX = 0;
+                double featureY = 0;
+                int zoneType = -1;
+                int LaserRunCount = 0; //雷射休息計數
+                //[BM:斷線從連復工-建立變數，使微孔加工時可以從上次當機的位置開始加工]
+                int Start_Hole = 0; //開始微孔加工的起始筆數
+
+                //[BM:斷線從連復工-如果有從新連線，給予斷線前加工的微孔加工序號]
+                if (reconnect_state == 1&& Processing_projects==0)//有重新連線且是在做微孔加工
+                {
+                    Start_Hole = reconnect_state_micropores_count;
+                    if (_AutoProcessLog_flag)
+                        writeEventLog_Automatic_processing("復連後開始加工", $"從第{Start_Hole}筆微孔開始加工");
+                }
+
+
+                for (int i = Start_Hole; i < data._NewDrillFeatures.Length; i++)//微孔加工迴圈
+                {
+                    //[BM:斷線從連復工-獲取當次迴圈加工到哪裡，並獲取此次迴圈開始時間]
+                    //================
+                    _updateTimer.Start();  // 啟動計時器
+                    Processing_projects = 0;//設定加工項目為微孔加工
+                    reconnect_state_micropores_count = i;//儲存當前的i值，復連之後從此加工
+                    lastUpdateTime = DateTime.Now; // 更新最後變更時間
+                    //================
+
+                    // Check cancel
+                    if (BW_AutoProcess.CancellationPending)
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+
+                    // Parse data
+                    featureX = data._NewDrillFeatures[i].X;
+                    featureY = data._NewDrillFeatures[i].Y;
+
+                    //雷射自動補償Z軸
+                    // If type changed, change Z compensate and power
+                    if (zoneType != data._NewDrillFeatures[i].Type)
+                    {
+                        zoneType = data._NewDrillFeatures[i].Type;
+
+                        // Change Laser power
+                        laserPowerPct = laserParamConvert(data._LP_PowerPct[data._Op_LaserParamSet[zoneType]], LP_Gain, LP_Offset);
+                        laserPowerPct = laserPowerPct + PowerCheck_Ofs;
+
+                        //Change Laser Divider
+                        //_Laser.ChangePPDivider(1);
+                        _Laser.ChangePPDivider(data._DDS_LaserDivider[zoneType]);
+                        Thread.Sleep(500);
+                        var _status = _Laser.GetLaserStatus();
+                        writeEvent("LaserDivider", _status.PpDivider);
+
+                        //while (_status.PpDivider != "1")
+                        while (_status.PpDivider != data._DDS_LaserDivider[zoneType].ToString())
+                        {
+                            retrycount++;
+
+                            //_Laser.ChangePPDivider(1);
+                            _Laser.ChangePPDivider(data._DDS_LaserDivider[zoneType]);
+                            Thread.Sleep(500);
+                            _status = _Laser.GetLaserStatus();
+                            writeEvent("LaserDivider", _status.PpDivider + "; retrycount " + retrycount);
+
+                            if (retrycount > 50)
+                            {
+                                MessageBox.Show("微孔 LaserDivider設定異常，請確認雷射振鏡。", "Error！！");
+                                e.Cancel = true;
+                                return;
+                            }
+                        }
+                        retrycount = 0;
+
+                        // Set Laser Output Power
+                        //CheckAndSetLaserPower(laserPowerPct);
+                        SetLaserPowerPercentage(laserPowerPct);
+
+                        //MES LOG記錄
+                        _CHPT_MES.Laser_Power = laserPowerPct.ToString();
+                        //MES LOG微孔總數記錄
+                        _CHPT_MES.Total_Hole = _NbrOfFeature_Total;
+
+                        // Change LaserScanner File 讀取刀具檔案
+                        try
+                        {
+                            uploadJob(data._DDS_ScanheadFilePath[zoneType]);
+                        }
+                        catch (Exception)
+                        {
+                            MessageBox.Show("載入刀具錯誤，請確認是否有這項刀具。", "Error！！");
+                            e.Cancel = true;
+                            return;
+                        }
+
+                        // Change Motion param
+                        CutSpeed = data._MP_CutSpeed[data._Op_MotionParamSet[zoneType]];
+                        FastSpeed = data._MP_FastSpeed[data._Op_MotionParamSet[zoneType]];
+
+                        // Check ZProbe or not 測高補償雷射Z軸
+                        if (data._DDS_ZProbe[zoneType])
+                        {
+                            // Set Positioning to Absolute Mode
+                            code = "G90";
+                            executeGCode(code);
+                            this.moveAbs((int)MotionAxis.Z, _ConfigEquip._Position_ConfocalLaser.Z, _ConfigEquip._Velocity_Default.Z);
+
+                            // Wait for Motion completed
+                            waitMotionDone(axisIndexZ, 10000);
+
+                            targetPositionX = data._DDS_ZprobePositionX[zoneType] + _ConfigEquip._RelPosition_Laser2ConfocalLaser.X;
+                            targetPositionY = data._DDS_ZprobePositionY[zoneType] + _ConfigEquip._RelPosition_Laser2ConfocalLaser.Y;
+
+                            // Wait in position
+                            waitMotionDone(axisIndexXY, 10000);
+
+                            // Move to target position
+                            double speed = _ConfigProcess._Speed_Fast;
+                            linearMove(targetPositionX, targetPositionY, speed);
+
+                            // Wait in position
+                            waitMotionDone(axisIndexXY, 10000);
+
+
+                            //微孔加工數大於設定數量，雷射休息
+                            if (_ConfigProcess._IsAutoLaserSleep)
+                            {
+                                if (LaserRunCount >= _ConfigProcess._LaserSleep_Count)
+                                {
+                                    Thread.Sleep(_ConfigProcess._LaserSleep_Time * 1000);
+                                    LaserRunCount = 0;
+                                }
+                            }
+
+                            // Get the CompensatePosition from ConfocalLaser
+                            try
+                            {
+                                // Wait for Motion completed
+                                waitMotionDone(axisIndexZ, 10000);
+                                Thread.Sleep(50);
+                                _CompensatePosition[zoneType] = getCompesatePosition();
+
+                                //測高比對-加工中測高紀錄                               
+                                AutoThickProcess[zoneType] = Math.Round(_positionFeedback[(int)MotionAxis.Z] - _CompensatePosition[zoneType] + _ConfigEquip._Height_Equip.Laser, 4);
+
+                            }
+                            catch (Exception)
+                            {
+                                MessageBox.Show("測厚異常，請確認是否已擺放樣品並完成光學對焦。", "Error！！");
+                                e.Cancel = true;
+                                return;
+                            }
+
+                            //[BM:測高加工前、後比對功能]
+                            if (_ConfigProcess._IsThickComparison)
+                            {
+                              
+                                double _ThickComparison = Math.Round(ThickProcess[zoneType] - AutoThickProcess[zoneType], 4);
+                                double max = +_ConfigProcess._ThickComparison;
+                                double min = -_ConfigProcess._ThickComparison;
+
+                                writeEvent("加工前測高No." + (zoneType + 1).ToString(), ThickProcess[zoneType].ToString());
+                                writeEvent("加工中測高No." + (zoneType + 1).ToString(), AutoThickProcess[zoneType].ToString());
+                                writeEvent("測高差值No." + (zoneType + 1).ToString(), _ThickComparison.ToString());
+
+                                //[BM:測高高度限制]
+                                //測高比對超出預設差值設備跳Err停止
+                                if (_ThickComparison < min || _ThickComparison > max)
+                                {
+                                    writeError("測高比對超出預設值", "測高差值No." + (zoneType + 1).ToString() + "：" + _ThickComparison.ToString());
+
+                                    targetPositionX = Math.Round(_ConfigProcess._Check_ThickLaserX - _process_Offset_X, 4);
+                                    targetPositionY = Math.Round(_ConfigProcess._Check_ThickLaserY - _process_Offset_Y, 4);
+                                    //移動到測高檢查基準點
+                                    linearMove(targetPositionX, targetPositionY, speed);
+                                    waitMotionDone(axisIndexXY, 100000);
+                                    this.moveAbs((int)MotionAxis.Z, _ConfigProcess._Check_ThickLaserZ, _ConfigEquip._Velocity_Default.Z);
+                                    waitMotionDone(axisIndexZ, 10000);
+
+                                    //記錄基測高檢查基準點的測高數值
+                                    try
+                                    {
+                                        Thread.Sleep(50);
+                                        _CompensatePosition[zoneType] = getCompesatePosition();
+                                        writeError("測高比對超出預設值", "測高檢查基準點： " + Math.Round(_positionFeedback[(int)MotionAxis.Z] - _CompensatePosition[zoneType] + _ConfigEquip._Height_Equip.Laser, 4).ToString());
+                                    }
+                                    catch (Exception)
+                                    {
+                                        MessageBox.Show("測高異常，請確認是否已擺放樣品並完成光學對焦。", "Error！！");
+                                        e.Cancel = true;
+                                        return;
+                                    }
+
+                                    //異常急停
+                                    setEmergencyStopLock();
+
+                                    e.Cancel = true;
+                                    return;
+                                }
+                            }
+
+
+                            // Change Compensate offsetZ
+                            // Evaluate the offsetZ
+                            _offsetZ = _CompensatePosition[zoneType] - _positionFeedback[(int)MotionAxis.Z];
+
+                            //string formatOffsetZ = string.Format("{0:0.####}", offsetZ);
+                            moveRel((int)MotionAxis.Z, _offsetZ, _ConfigEquip._Velocity_Default.Z);//依據需補償高度值進行移動
+
+                            // Wait in position
+                            waitMotionDone(axisIndexZ, 10000);
+                        }
+
+                        // Wait in position
+                        waitMotionDone(axisIndexZ, 10000);
+                    }
+
+                    //targetPositionX = _process_Offset_X + featureX;
+                    //targetPositionY = _process_Offset_Y + featureY;
+                    targetPositionX = featureX;
+                    targetPositionY = featureY;
+
+                    // Wait in position
+                    waitMotionDone(axisIndexXY, 10000);
+
+                    // Move to target position
+                    double fastSpeed = motionParamConvert(FastSpeed, MP_Gain, MP_Offset);
+                    linearMove(targetPositionX, targetPositionY, fastSpeed);
+
+                    // Wait in position
+                    waitMotionDone(axisIndexXY, 10000);
+
+                    //[BM:自訂Log紀錄內容-微孔加工-位置是否到達]
+                    //if (_AutoProcessLog_flag)
+                    //    writeEventLog_Automatic_processing($"第{i}比座標位置", $"X={targetPositionX},Y={targetPositionY}已確實到達");
+
+                    // Do Laser processing 雷射加工
+                    try
+                    {
+                        DateTime now = DateTime.Now;
+
+                        // bool result = DoLaserProcessing(); // 執行一次並取得結果
+                        if (!DoLaserProcessing()) // 執行一次並取得回傳結果是true 或是false
+                        {
+                            //[BM:自訂Log紀錄內容-振鏡加工-是否成功(此處為失敗進行記錄)]
+                            if (_AutoProcessLog_flag)
+                                writeEventLog_Automatic_processing($"第{i}筆微孔雷射加工出問題", $"加工總數={data._NewDrillFeatures.Length}。問題內容:振鏡狀態錯誤 ");
+
+                            setEmergencyStopLock();//即停
+                            return;//終止自動加工流程
+                        }
+
+                        //[BM:自訂Log紀錄內容-振鏡加工-是否成功(此處為成功進行記錄)]
+                        if (_AutoProcessLog_flag && (now - _lastAutoProcessLogTime).TotalSeconds >= 1.0)//每個微孔加工完成時間至少大於一秒
+                        {
+                            writeEventLog_Automatic_processing($"第{i}筆微孔雷射加工完成", $"加工總數={data._NewDrillFeatures.Length}");
+                        }
+                        else
+                        {
+
+                            writeEventLog_Automatic_processing($"第{i}筆微孔雷射加工異常", $"加工總數={data._NewDrillFeatures.Length}。問題內容:微孔之間加工時間過短(振鏡當機)");
+                            //[BM:斷線從連復工-進行重新連線]
+                            DoLaserReconnect();//重新連線
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        //[BM:自訂Log紀錄內容-振鏡加工-(例外錯誤)]
+                        if (_AutoProcessLog_flag)
+                            writeEventLog_Automatic_processing($"第{i}筆微孔雷射加工出問題", $"加工總數={data._NewDrillFeatures.Length}。問題內容:{ex} ");
+                        throw ex;
+                    }
+
+                    // Report progress
+                    BW_AutoProcess.ReportProgress(0);
+
+                    // Check Suspend or not
+                    if (enableSuspend)
+                    {
+                        if (stopwatch_Suspend.ElapsedMilliseconds > suspend_IntervalTime)
+                        {
+                            //[BM:自訂Log紀錄內容-微孔加工-有正常執行暫停]
+                            if (_AutoProcessLog_flag)
+                                writeEventLog_Automatic_processing($"第{i}筆加工流程完成後有執行暫停", $" ");
+                            // Write Data log
+                            writeDataQueue("AutoProcess", "Suspend(ms) = " + suspend_TimeToWait);
+                            stopwatch_Suspend.Restart();
+
+                            while (stopwatch_Suspend.ElapsedMilliseconds < suspend_TimeToWait)
+                            {
+                                // Check cancel
+                                if (BW_AutoProcess.CancellationPending)
+                                {
+                                    e.Cancel = true;
+                                    return;
+                                }
+                                Thread.Sleep(1000);
+                            }
+                            stopwatch_Suspend.Restart();
+                        }
+                    }
+
+                    // Check Hold or not
+                    if (enableHold)
+                    {
+                        if (stopwatch_Hold.ElapsedMilliseconds > hold_IntervalTime)
+                        {
+                            // Write Data log
+                            writeDataQueue("AutoProcess", "Calibrate Power = " + laserPowerPct); ;
+
+                            //// Check and set laser power
+                            //CheckAndSetLaserPower(laserPowerPct);
+
+                            // Re-upload JobList
+                            // Evaluate the offsetZ
+                            double offsetZ = _CompensatePosition[zoneType] - _positionFeedback[(int)MotionAxis.Z];
+                            string formatOffsetZ = string.Format("{0:0.####}", offsetZ);
+                            double.TryParse(formatOffsetZ, out offsetZ);
+
+                            // Upload JobList with Compensate offsetZ by changing JobList
+                            string fileName = data._DDS_ScanheadFilePath[zoneType];
+                            uploadJobListWithCompensateZ(fileName, offsetZ);
+
+                            stopwatch_Hold.Restart();
+                        }
+                    }
+
+                }
+
+                // Stop stopwatch
+                stopwatch_Warmup.Stop();
+                stopwatch_Suspend.Stop();
+                stopwatch_Hold.Stop();
+
+                //Write Log
+                writeEvent("自動加工流程", "微孔加工結束");
+
+                // Write Process
+                writeProcess("Step7", "加工流程微孔結束");
+
+                //[BM:斷線從連復工-微孔加工完成後 將是否有重連的狀態設為沒有重連]
+                reconnect_state = 0;
+
+
+            }
+
+            #endregion
+
+            #region Else Process
+
+            Queue<QueueCmd> queueCmds;
+            //[BM:斷線從連復工-如果有從新連線，給與斷線前還未加工的內容]
+            if (reconnect_state == 1&& Processing_projects==1)
+            {
+               queueCmds = reconnect_state_queueCmds;
+            }
+            else
+            {
+               queueCmds = data._QueueCmds;//正常流程都沒斷線會執行這邊
+            }
+            string jobName = "";
+            double setLaserPower = 0;
+            int setLaserDivider = 0;
+            //ControllerDiagPacket ctrlDiagPacket = _MC_Controller.DataCollection.RetrieveDiagnostics();
+            int opType = -1;
+            while (queueCmds.Count != 0)
+            {
+                // Check cancel
+                if (BW_AutoProcess.CancellationPending)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+                //================
+                //[BM:斷線從連復工-儲存斷線前的加工命令]
+                reconnect_state_queueCmds = queueCmds;
+                Processing_projects = 1;//設定加工項目為其餘的加工
+                lastUpdateTime = DateTime.Now; // 更新最後變更時間
+                //================
+
+                //[BM:微孔外之命令排程(依次取出命令使用即消失1條命令)]
+                QueueCmd cmd = queueCmds.Dequeue();
+
+                switch (cmd.CmdModule)
+                {
+                    case NCScriptParser.Module.Annotation:
+                        switch (cmd.Command)
+                        {
+                            case AnnotCmd.Operation:
+                                logAnnotOperation((string)cmd.Arguments);
+                                opType = (int)cmd.Else;
+
+                                // Write Data log
+                                writeDataQueue("AnnotCmd", "opType = " + opType);
+                                break;
+                        }
+                        break;
+                    case NCScriptParser.Module.Laser:
+                        switch (cmd.Command)
+                        {
+                            case LaserCmd.SetLaserPower:
+                                // Parse Laser power
+                                setLaserPower = (int)cmd.Arguments;
+                                setLaserPower = laserParamConvert(setLaserPower, LP_Gain, LP_Offset);
+                                // If Laser power changed, do process
+                                if (laserPowerPct != setLaserPower)
+                                {
+                                    laserPowerPct = setLaserPower;
+                                    // Set Laser Output Power
+                                    //CheckAndSetLaserPower(laserPowerPct);
+                                    SetLaserPowerPercentage(laserPowerPct);
+
+                                    //MES LOG記錄
+                                    _CHPT_MES.Laser_Power = laserPowerPct.ToString();
+                                    // Reupload the JobFile
+                                    //uploadJob(jobName);
+
+                                    // Write Data log
+                                    writeDataQueue("LaserCmd", "setLaserPower = " + setLaserPower);
+                                }
+
+                                break;
+
+                            case LaserCmd.SetLaserDivider:
+                                //Change Laser Divider
+                                //_Laser.ChangePPDivider(1);
+                                setLaserDivider = (int)cmd.Arguments;
+                                _Laser.ChangePPDivider(setLaserDivider);
+                                Thread.Sleep(500);
+                                var _otherstatus = _Laser.GetLaserStatus();
+                                writeEvent("LaserDivider", _otherstatus.PpDivider);
+
+                                while (_otherstatus.PpDivider != setLaserDivider.ToString())
+                                {
+                                    retrycount++;
+
+                                    //_Laser.ChangePPDivider(1);
+                                    _Laser.ChangePPDivider(setLaserDivider);
+                                    Thread.Sleep(500);
+                                    _otherstatus = _Laser.GetLaserStatus();
+                                    writeEvent("LaserDivider", _otherstatus.PpDivider + "; retrycount " + retrycount);
+
+                                    if (retrycount > 50)
+                                    {
+                                        MessageBox.Show("GH LaserDivider設定異常，請確認雷射振鏡。", "Error！！");
+                                        e.Cancel = true;
+                                        return;
+                                    }
+                                }
+                                retrycount = 0;
+
+                                break;
+                        }
+                        break;
+                    case NCScriptParser.Module.Scanner:
+                        switch (cmd.Command)
+                        {
+                            case ScannerCmd.SelectJobByName:
+                                jobName = (string)cmd.Arguments;
+                                uploadJob(jobName);
+
+                                // Write Data log
+                                writeDataQueue("ScannerCmd", "uploadJob = " + jobName);
+                                break;
+
+                            case ScannerCmd.GasOnOff:
+                                bool flag = (bool)cmd.Arguments;
+                                enableProcessGas(flag);
+
+                                // Write Data log
+                                writeDataQueue("ScannerCmd", "enableProcessGas = " + flag);
+                                break;
+
+                            case ScannerCmd.StartJob:
+                                DoLaserCutting();
+
+                                // Write Data log
+                                writeDataQueue("ScannerCmd", "DoLaserCutting");
+                                break;
+
+                            case ScannerCmd.AbortJob:
+                                StopLaserCutting();
+
+                                //MES LOG微孔總數+其他孔總數記錄
+                                _CHPT_MES.Total_Hole++;
+
+                                // Write Data log
+                                writeDataQueue("ScannerCmd", "StopLaserCutting");
+                                break;
+
+                            //研發手動NC檔 打微孔模式
+                            case ScannerCmd.ExecuteJob:                             
+                                try
+                                {
+                                    // Do Laser processing 雷射開啟
+                                    DoLaserProcessing();
+
+                                    // Write Data log
+                                    writeDataQueue("ScannerCmd", "DoLaserProcessing");
+                                }
+                                catch (Exception ex)
+                                {
+                                    throw ex;
+                                };
+                                break;
+                        }
+                        break;
+                    case NCScriptParser.Module.Equipment:
+                        switch (cmd.Command)
+                        {
+                            case EquipCmd.VacuumOnOff:
+                                bool flag = (bool)cmd.Arguments;
+                                enableChuckVacuum(flag);
+
+                                // Write Data log
+                                writeDataQueue("EquipCmd", "enableChuckVacuum = " + flag);
+                                break;
+                        }
+                        break;
+                    //測高
+                    case NCScriptParser.Module.Probe:
+                        switch (cmd.Command)
+                        {
+                            case ProbeCmd.ProbeSurface:
+                                //// Get current position command X, Y
+                                ////double posCmdX = ctrlDiagPacket[(int)MotionAxis.X].PositionCommand;
+                                ////double posCmdY = ctrlDiagPacket[(int)MotionAxis.Y].PositionCommand;
+                                ////double speed = data._MP_FastSpeed[data._Op_MotionParamSet[opType]];
+                                ////speed = motionParamConvert(speed, MP_Gain, MP_Offset);
+                                //// Profe surface and upload the JobFile
+                                ////probeSurfaceAndUploadCompensateJobList(posCmdX, posCmdY, speed, jobName);
+
+                                // Probe surface and compensate the difference
+                                try
+                                {
+                                    probeSurfaceAndCompensateDifference(out resultdistance);
+                                    //拍攝功能-開門關閉雷射二次加工計數
+                                    AutoThickProcess_Video_Count++;
+                                    //測高完成
+                                    ProbeFinish = true;
+                                }
+                                catch (Exception)
+                                {
+                                    MessageBox.Show("測厚異常，請確認是否已擺放樣品並完成光學對焦。", "Error！！");
+                                    e.Cancel = true;
+                                    return;
+                                }
+
+                                // Write Data log
+                                writeDataQueue("ProbeCmd", "probeSurfaceAndCompensateDifference");
+                                break;
+                        }
+                        break;
+                    case NCScriptParser.Module.GCode:
+                        switch (cmd.Command)
+                        {
+                            //[BM:G-code-輸入G-code]
+                            case GCodeCmd.Set:
+                                code = (string)cmd.Arguments;
+                                executeGCode(code);
+                                break;
+
+                            //Z軸下降
+                            case GCodeCmd.LinearZ2ProcessPlane:
+                                //測高完成 或 Z軸上升完成
+                                if (ProbeFinish || LinearZFinish)
+                                {
+                                    // Due to Gantry instable issues, abandon GCode related to axis-Z
+                                    code = "G91";
+                                    executeGCode(code);
+
+                                    moveRel((int)MotionAxis.Z, resultdistance, _ConfigEquip._Velocity_Default.Z);
+
+
+                                    // Wait for Motion completed
+                                    waitMotionDone(axisIndexZ, 10000);
+
+                                    // Write Data log
+                                    writeDataQueue("LinearZ2ProcessPlane", "Move DownZ = " + code + " " + resultdistance.ToString());
+
+                                    code = "G90";
+                                    executeGCode(code);
+                                    ProbeFinish = false;
+                                    LinearZFinish = false;
+                                }
+                                break;
+
+                            case GCodeCmd.CircleXY:
+                            case GCodeCmd.LinearXY:
+                                code = (string)cmd.Arguments;
+                                if (cmd.Else != null)
+                                {
+                                    // Parse Motion speed
+                                    double speed = (int)cmd.Else;
+                                    speed = motionParamConvert(speed, MP_Gain, MP_Offset);
+                                    // Replace GCode Motion speed
+                                    Regex regex = new Regex(".*F");
+                                    Match match = regex.Match(code);
+                                    code = match.Value + string.Format("{0:0.###}", speed);
+                                }
+                                executeGCode(code);
+                                break;
+
+                            //Z軸上升
+                            case GCodeCmd.LinearZ:
+                            //case GCodeCmd.RapidZ:
+                                // Due to Gantry instable issues, abandon GCode related to axis-Z
+                                // Otherwise, these cmds are the same as CircleXY & LinearXY
+                                code = "G90";
+                                executeGCode(code);
+                                this.moveAbs((int)MotionAxis.Z, _ConfigEquip._Position_ConfocalLaser.Z, _ConfigEquip._Velocity_Default.Z);
+
+                                // Wait for Motion completed
+                                waitMotionDone(axisIndexZ, 10000);
+
+                                //Z軸上升完成
+                                LinearZFinish = true;
+
+                                // Write Data log
+                                writeDataQueue("LinearZ & RapidZ", "Move UpZ " + code);
+                                break;
+                        }
+                        break;
+                }
+
+                // Report progress
+                BW_AutoProcess.ReportProgress(0);
+            }
+
+
+
+            #endregion
+
+            //[BM:斷線從連復工-所有加工流程完成重置狀態]
+            Processing_projects = 0;//重置加工項目狀態為0
+            reconnect_state = 0;//重置是否有重新連線的狀態為0
+            }
+        }

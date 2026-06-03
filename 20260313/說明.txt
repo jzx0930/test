@@ -1,0 +1,7 @@
+0311_1_laser_cut_res.ascript
+0311_1_laser_heat_res.ascript
+以上為切割線移除版本
+
+0311_2_laser_cut_res.ascript
+0311_2_laser_heat_res.ascript
+以上為切割線改為垂直版本

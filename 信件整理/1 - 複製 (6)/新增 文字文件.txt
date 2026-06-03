@@ -1,0 +1,16 @@
+您好~
+目前遇到情況是，雷射源接收外部訊號的阻抗為1M歐姆
+而當前使用GL4的Laser Output O1與GND輸出5V TTL訊號給雷射源當作觸發訊號(GL4原廠硬體的輸出阻抗為50歐姆?) https://help.aerotech.com/automation1/hardware-manuals/Automation1-GL4-web/Chapter-2-Installation-and-Configuration/Laser-Interface-GL4.htm
+現在無法使用GL4輸出的5V訊號給雷射源當作觸發訊號使用
+
+想請問能否用指令更改輸出阻抗?
+或是其他能夠使阻抗匹配之方法?
+再請提供解決之方法 感謝您~
+
+
+
+
+GL4右側O1與GND為TTL輸出, 阻抗為50歐姆。
+沒有指令可以變更內部輸入阻抗。
+若您要搭配其他阻抗的控制電路，可以參考左側的O1+與O1-的光耦合，
+在搭配適合您雷射的控制電路方式

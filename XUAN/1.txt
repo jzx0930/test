@@ -1,0 +1,340 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace LaserScanner.Arges
+{
+    public partial class Form : System.Windows.Forms.Form
+    {
+        public argesWrapper _laserScanner { get; }
+        public argesWrapper.PLC_States States { get { return states; } }
+        private argesWrapper.PLC_States states = new argesWrapper.PLC_States();
+
+        private enum MainState
+        {
+            Disconnect,
+            Connect,
+            OK,
+            NO,
+            Progress
+        };
+
+
+        public Form()
+        {
+            InitializeComponent();
+
+            // Create class instance
+            _laserScanner = new argesWrapper("LaserScanner");
+        }
+       
+        private void Form_Load(object sender, EventArgs e)
+        {
+            // Initialize GUI panel
+
+            // Update Status Image
+            updateMainStatusImage(MainState.Disconnect);
+            // Disable Group Controls
+            enableGroupControls(false);
+        }
+
+
+        #region User Event
+
+        public void btn_Connect_Click(object sender, EventArgs e)
+        {
+            //[BM:振鏡斷線重連功能開發-振鏡控制小程式(連接)]
+            //若配置檔LaserScanner =False沒有設為FALSE ，LCH啟動時會自行連接振鏡控制器一次，若自行叫出振鏡控制小程式按下連接後，進行後續操作會是無效的。(所以實驗時要將配置檔設為False)
+            // Update Status Image
+            updateMainStatusImage(MainState.Progress);
+
+            // Call BackgroundWorker to call DoConnect
+            if (BW_Connect.IsBusy != true)
+                BW_Connect.RunWorkerAsync(MainState.Connect);
+        }
+
+        public void btn_Disconnect_Click(object sender, EventArgs e)
+        {
+            // Update Status Image
+            updateMainStatusImage(MainState.Progress);
+
+            // Call BackgroundWorker to call DoDisconnect
+            if (BW_Connect.IsBusy != true)
+                BW_Connect.RunWorkerAsync(MainState.Disconnect);
+        }
+
+        private void btn_PingCtrl_Click(object sender, EventArgs e)
+        {
+            _laserScanner.PingController();
+        }
+
+        private void btn_GetFWVer_Click(object sender, EventArgs e)
+        {
+            var FWVer = _laserScanner.GetFirmwareVersion();
+            updateControlTextWithString(txt_GetFWVer, FWVer);
+        }
+
+        private void btn_GetLibVer_Click(object sender, EventArgs e)
+        {
+            var LibVer = _laserScanner.GetLibVersion();
+            updateControlTextWithString(txt_GetLibVer, LibVer);
+        }
+
+        private void btn_LoadJobFromFile_Click(object sender, EventArgs e)
+        {
+            using (var ofd = new OpenFileDialog())
+            {
+                var result = ofd.ShowDialog();
+
+                if (result == DialogResult.OK && !string.IsNullOrWhiteSpace(ofd.FileName))
+                {
+                    var filePath = ofd.FileName;
+                    MessageBox.Show("SelectedFilePath: " + filePath, "Message");
+
+                    // Upload to Arges controller
+                    _laserScanner.LoadJobFromFile(filePath);
+                }
+            }
+        }
+
+        private void btn_ClearJobs_Click(object sender, EventArgs e)
+        {
+            //清除振鏡上刀具
+            _laserScanner.ClearJobs();
+        }
+
+        private void btn_StartJob_Click(object sender, EventArgs e)
+        {
+            _laserScanner.StartJob();
+        }
+
+        private void btn_StopJob_Click(object sender, EventArgs e)
+        {
+            _laserScanner.StopJob();
+        }
+
+        private void btn_AbortJob_Click(object sender, EventArgs e)
+        {
+            _laserScanner.AbortJob();
+        }
+
+        #endregion
+
+        #region Private Method
+
+        private void DoConnect()
+        {
+            _laserScanner.Connect();
+
+            _laserScanner.Initialize();
+
+            // Do initialization process
+            
+        }
+
+        private void DoDisconnect()
+        {
+            _laserScanner.Deinitialize();
+
+            _laserScanner.Close();
+        }
+
+        #endregion
+
+        #region Update GUI Control
+
+        private delegate void dEnableGroupControl(bool enable);
+        private void enableGroupControls(bool enable)
+        {
+            if (group_Comm.InvokeRequired)
+            {
+                var func = new dEnableGroupControl(enableGroupControls);
+                this.Invoke(func, enable);
+            }
+            else
+            {
+                group_Comm.Enabled = enable;
+                group_JobOp.Enabled = enable;
+                group_PLCStates.Enabled = enable;
+            }
+        }
+
+        private delegate void dUpdatePnlBackColor(Panel panel, bool enable);
+        private void updatePnlBackColor(Panel panel, bool enable)
+        {
+            if (panel.InvokeRequired)
+            {
+                var func = new dUpdatePnlBackColor(updatePnlBackColor);
+                this.Invoke(func, panel, enable);
+            }
+            else
+            {
+                if (enable)
+                    panel.BackColor = Color.LightGreen;
+                else
+                    panel.BackColor = Color.DarkGreen;
+            }
+        }
+
+        private delegate void dUpdate(MainState state);
+        private void updateMainStatusImage(MainState state)
+        {
+            string path = Environment.CurrentDirectory + "\\images\\" + state + ".png";
+            Image temp = Image.FromFile(path);
+            Bitmap bitmap = Module_Interface.ImageHandler.ResizeImage(temp, pnl_Main_Status.Width, pnl_Main_Status.Height);
+            pnl_Main_Status.BackgroundImage = bitmap;
+        }
+
+        private void updateControlTextWithString(Control control, string text)
+        {
+            if (control.InvokeRequired)
+            {
+                Action<Control, string> del = (ctrl, msg) => ctrl.Text = msg;
+                this.Invoke(del, control, text);
+            }
+            else
+            {
+                control.Text = text;
+            }
+        }
+
+        #endregion
+
+        #region BackgroundWorker
+
+        private void BW_Connect_DoWork(object sender, DoWorkEventArgs e)
+        {
+            e.Result = e.Argument;
+            MainState state = (MainState)e.Argument;
+            if (state == MainState.Connect)
+                DoConnect();
+            else if (state == MainState.Disconnect)
+                DoDisconnect();
+            else
+                throw new Exception("Undefined state = " + state);
+
+            // Add delay
+            Thread.Sleep(100);
+        }
+
+        private void BW_Connect_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        {
+            if (e.Error != null)
+                updateMainStatusImage(MainState.NO);
+            else
+            {
+                updateMainStatusImage((MainState)e.Result);
+
+                // Switch Group Controls
+                if ((MainState)e.Result == MainState.Connect)
+                {
+                    enableGroupControls(true);
+                    registerEventPLCState();
+                }
+                else if ((MainState)e.Result == MainState.Disconnect)
+                    enableGroupControls(false);
+            }
+        }
+
+        //private void BW_ExecuteJob_DoWork(object sender, DoWorkEventArgs e)
+        //{
+        //    bool isExecAllJobs = (bool)e.Argument;
+        //    if (isExecAllJobs)
+        //    {
+        //        // Execute All Jobs in Queue list
+        //        int counts = _queueQueue.Count;
+        //        for (int i = 0; i < counts; i++)
+        //        {
+        //            _laserScanner.JobExecution(true);
+        //            while (true)
+        //            {
+        //                if (_laserScanner.GetLastQueueID() == _queueQueue.Peek().QueueID)
+        //                {
+        //                    _queueQueue.Dequeue();
+        //                    break;
+        //                }
+        //                Thread.Sleep(10);
+        //            }
+        //            // Get Last Job Execution Time
+        //            _lastExecTime = _laserScanner.GetLastExecTime();
+        //            BW_ExecuteJob.ReportProgress(0);
+        //        }
+        //    }
+        //    else
+        //    {
+        //        // Execute the first Job in Queue list
+        //        _laserScanner.JobExecution(true);
+        //        bool isDone = false;
+        //        while (!isDone)
+        //        {
+        //            if (_laserScanner.GetLastQueueID() == _queueQueue.Peek().QueueID)
+        //            {
+        //                _queueQueue.Dequeue();
+        //                isDone = true;
+        //            }
+        //            Thread.Sleep(10);
+        //        }
+        //        // Get Last Job Execution Time
+        //        _lastExecTime = _laserScanner.GetLastExecTime();
+        //        BW_ExecuteJob.ReportProgress(0);
+        //    }
+        //}
+
+        //private void BW_ExecuteJob_ProgressChanged(object sender, ProgressChangedEventArgs e)
+        //{
+        //    updateControlTextWithString(txt_LastExecTime, _lastExecTime.ToString());
+        //    DisplayOnDataGridView_ExecQueueList(_queueQueue.ToArray());
+        //}
+
+        //private void BW_ExecuteJob_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        //{
+        //    updatePnlBackColor(pnl_JobExecution_Status, false);
+        //}
+
+        #endregion
+
+        #region Event handling
+
+        private void registerEventPLCState()
+        {
+            // Register the event
+            _laserScanner.ArgesPLCEventUpdated += _argesScanner_ArgesPLCEventUpdated;
+
+            void _argesScanner_ArgesPLCEventUpdated(object sender, ArgesPLCEventArgs e)
+            {
+                var states = e.States;
+                // Update variable
+                this.states = states;
+
+                // Update UI controls
+                updatePnlBackColor(pnl_DeviceAwake, states.PLC_DEVICES_AWAKE);
+                updatePnlBackColor(pnl_DeviceFailure, states.PLC_DEVICES_FAILURE);
+                updatePnlBackColor(pnl_DeviceReady, states.PLC_DEVICES_READY);
+                updatePnlBackColor(pnl_DeviceSetup, states.PLC_DEVICES_SETUP);
+                updatePnlBackColor(pnl_JobReady, states.PLC_JOB_READY);
+                updatePnlBackColor(pnl_JobActive, states.PLC_JOB_ACTIVE);
+                updatePnlBackColor(pnl_JobCompleted, states.PLC_JOB_COMPLETED);
+                updatePnlBackColor(pnl_JobFailed, states.PLC_JOB_FAILED);
+                updatePnlBackColor(pnl_SysSafe, states.PLC_SYS_SAFE);
+                updatePnlBackColor(pnl_JobPaused, states.PLC_JOB_PAUSED);
+                updatePnlBackColor(pnl_JobPiloted, states.PLC_JOB_PILOTED);
+                updatePnlBackColor(pnl_JobPreloaded, states.PLC_JOB_PRELOADED);
+                updatePnlBackColor(pnl_JobStopping, states.PLC_JOB_STOPPING);
+                updatePnlBackColor(pnl_SystemReadyForPowerOff, states.PLC_READY_FOR_POWER_OFF);
+                updatePnlBackColor(pnl_SystemReady, states.PLC_SYSTEM_READY);
+                updatePnlBackColor(pnl_Attention, states.PLC_ATTENTION);
+                updatePnlBackColor(pnl_SysSafeRequest, states.PLC_SYS_SAFE_REQUEST);
+                updatePnlBackColor(pnl_JobPreload, states.PLC_JOB_PRELOAD);
+            }
+        }
+
+        #endregion
+    }
+}

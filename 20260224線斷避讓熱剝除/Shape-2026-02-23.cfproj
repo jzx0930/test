@@ -1,0 +1,605 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ProjectFile>
+<FileVersion>1.0</FileVersion>
+<ApplicationVersion>3.0.0.81</ApplicationVersion>
+<LastSaved>2026-02-24T17:08:00.051991+08:00</LastSaved>
+<Data>
+<SOAP-ENV:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:clr="http://schemas.microsoft.com/soap/encoding/clr/1.0" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+<SOAP-ENV:Body>
+<a1:Project id="ref-1" xmlns:a1="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Project">
+<Automation1RootGroup href="#ref-4"/>
+<ToolTable href="#ref-5"/>
+<HatchStyleTable href="#ref-6"/>
+<Settings href="#ref-7"/>
+<NextShapeNumber>9</NextShapeNumber>
+<NextGroupNumber>2</NextGroupNumber>
+</a1:Project>
+<a2:Group id="ref-4" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<Name id="ref-9">Root Group</Name>
+<ToolSettings href="#ref-10"/>
+<TransitionSettings href="#ref-11"/>
+<Feedrate id="ref-12">10</Feedrate>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<Groupables href="#ref-13"/>
+</a2:Group>
+<a1:ToolTable id="ref-5" xmlns:a1="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Project">
+<Tools href="#ref-14"/>
+</a1:ToolTable>
+<a1:HatchStyleTable id="ref-6" xmlns:a1="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Project">
+<HatchStyles href="#ref-15"/>
+</a1:HatchStyleTable>
+<a1:ProjectSettings id="ref-7" xmlns:a1="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Project">
+<Export href="#ref-16"/>
+</a1:ProjectSettings>
+<a3:CustomToolSettings id="ref-10" xmlns:a3="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Tools/Aerotech.CADFusion.Core">
+<Name id="ref-18">Custom Tool</Name>
+<Id href="#ref-19"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<InitializationCode id="ref-20">//流程開始時執行一次的程式碼
+#define ShapeFeedrate 30 			//G0速度 
+#define CoordinatedMotionTransitionFeedrate 30  //G1速度 
+
+#define X_Start 185 //X加工起點 
+#define Y_Start 89  //Y加工起點
+#define PulseCount 1
+#define PulseTime 1.8 //PulseTime單位:us   
+#define DistanceThreshold 0.002 //DistanceThreshold單位:mm 。XY平台最小解析度為0.1um
+
+var $numberOfSteps as integer
+var $currentStep as integer
+$numberOfSteps=1 //迴圈次數
+
+// -------------------------
+//  X/Y 軸基本設定
+// -------------------------
+SetupAxisRampType([X,Y],RampType.Sine)
+SetupAxisRampValue([X,Y],RampMode.Rate,200/1.57)	//G0加速度(units/sec²)。 
+//SetupAxisRampValue([X,Y],RampMode.Rate,100000/1.57)   // 正方形
+SetupAxisSpeed([X,Y],[20,20])
+
+SetupCoordinatedRampType(RampType.Sine)
+SetupCoordinatedRampValue(RampMode.Rate,200/1.57)	//G1加速度(units/sec²)。
+//SetupCoordinatedRampValue(RampMode.Rate,ShapeFeedrate*1/1.57)//正方形
+SetupCoordinatedSpeed(ShapeFeedrate)
+
+SetupTaskDistanceUnits(DistanceUnits.Primary)
+SetupTaskTimeUnits(TimeUnits.Seconds)
+SetupTaskTargetMode(TargetMode.Absolute)
+SetupTaskWaitMode(WaitMode.MotionDone)
+
+// -------------------------
+//  Encoder Echo（X/Y → GX）
+// -------------------------
+var $outputDivider as integer = 1
+
+DriveEncoderOutputConfigureDirection(X,EncoderOutputChannel.SyncPortA,0)
+DriveEncoderOutputConfigureDivider(X,EncoderOutputChannel.SyncPortA,$outputDivider)
+DriveEncoderOutputConfigureInput(X,EncoderOutputChannel.SyncPortA,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(X,EncoderOutputChannel.SyncPortA,EncoderOutputMode.Default)
+
+DriveEncoderOutputConfigureDirection(Y,EncoderOutputChannel.SyncPortB,0)
+DriveEncoderOutputConfigureDivider(Y,EncoderOutputChannel.SyncPortB,$outputDivider)
+DriveEncoderOutputConfigureInput(Y,EncoderOutputChannel.SyncPortB,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(Y,EncoderOutputChannel.SyncPortB,EncoderOutputMode.Default)
+
+
+// -------------------------
+//  PSO 設定
+// -------------------------
+PsoReset(GX)
+
+// 依距離觸發
+PsoDistanceConfigureCounterReset(GX,PsoDistanceCounterResetMask.ResetWhenOutputOff)
+PsoDistanceConfigureInputs(GX,[PsoDistanceInput.GL4SyncPortB,PsoDistanceInput.GL4SyncPortA])
+PsoDistanceConfigureFixedDistance(GX,Trunc(UnitsToCounts(GX,DistanceThreshold)/ParameterGetAxisValue(GX,AxisParameter.PrimaryEmulatedQuadratureDivider)))//單位mm 移動1000um =1mm  500um=0.5mm  0.05mm=50um 0.002mm=2um
+
+
+// 脈衝波型
+/*The time in microseconds 
+雷射重複頻率=400kHz
+=1/400000=0.0000025s=2.5us(得出2.5us=1發)
+所以100us=40發
+*/
+PsoWaveformConfigureMode(GX,PsoWaveformMode.Pulse)
+PsoWaveformConfigurePulseFixedCount(GX, PulseCount)
+PsoWaveformConfigurePulseFixedOnTime(GX, PulseTime) //每一個脈衝的高電位時間 1s=1000ms=1000000us     
+PsoWaveformConfigurePulseFixedTotalTime(GX, PulseTime)
+PsoWaveformApplyPulseConfiguration(GX)
+PsoWaveformOn(GX)
+
+// 實體輸出腳位
+PsoOutputConfigureOutput(GX,PsoOutputPin.GL4LaserOutput0)
+PsoOutputConfigureSource(GX,PsoOutputSource.Waveform)
+
+//VelocityBlendingOff()
+//VelocityBlendingOn()
+// -------------------------
+//  運動
+// -------------------------
+//AppDataCollectionStop()蒐集資料
+//AppDataCollectionSnapshot()
+//----------------
+
+//以下為加工路徑運行
+for $currentStep = 1 to $numberOfSteps
+G82
+
+PsoDistanceCounterOff(GX)
+PsoDistanceEventsOff(GX)
+MoveLinear([X,Y],[X_Start,Y_Start],300)
+
+G92 X0 Y0     ; 將目前位置設定為 (0,0)</InitializationCode>
+<ToolOnCode id="ref-21">
+//PSO On
+PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+PsoWaveformOn(GX)
+PsoDistanceCounterOn(GX)
+PsoDistanceEventsOn(GX)
+//Triggered once before moving
+//PsoEventGenerateSingle(GX)
+</ToolOnCode>
+<ToolOffCode id="ref-22">PsoOutputOff(GX)
+PsoDistanceEventsOff(GX)
+PsoDistanceCounterOff(GX)
+PsoWaveformOff(GX)</ToolOffCode>
+<ToolTeardownCode id="ref-23">end
+
+G82   ; 清除 G92所設定的偏移
+//AppDataCollectionStop()//蒐集數據結束
+PsoWaveformOff(GX)
+PsoDistanceEventsOff(GX)
+PsoDistanceCounterOff(GX)
+
+//VelocityBlendingOff()
+
+SetupTaskTargetMode(TargetMode.Absolute)
+MoveLinear([X,Y],[150,0],100)//出料位置
+</ToolTeardownCode>
+<ToolOnCodePlacement xsi:type="a8:ToolOnCodePlacement" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">BeforeLeadInMove</ToolOnCodePlacement>
+<ToolOffCodePlacement xsi:type="a8:ToolOffCodePlacement" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">AfterLeadOutMove</ToolOffCodePlacement>
+<ControllerFamily xsi:type="a8:ControllerFamily" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">Automation1</ControllerFamily>
+</a3:CustomToolSettings>
+<a4:TransitionSettings id="ref-11" xmlns:a4="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.AeroBasic/Aerotech.CADFusion.Core">
+<Type xsi:type="a8:TransitionType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">PointToPoint</Type>
+</a4:TransitionSettings>
+<SOAP-ENC:Array id="ref-13" SOAP-ENC:arrayType="a2:IGroupable[1]" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<item href="#ref-24"/>
+</SOAP-ENC:Array>
+<SOAP-ENC:Array id="ref-14" SOAP-ENC:arrayType="a3:IToolSettings[1]" xmlns:a3="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Tools/Aerotech.CADFusion.Core">
+<item href="#ref-10"/>
+</SOAP-ENC:Array>
+<SOAP-ENC:Array id="ref-15" SOAP-ENC:arrayType="a5:IHatchStyleSettings[0]" xmlns:a5="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.HatchStyles/Aerotech.CADFusion.Core">
+</SOAP-ENC:Array>
+<a1:ExportSettings id="ref-16" xmlns:a1="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Project">
+<HorizontalAxisSettings href="#ref-25"/>
+<VerticalAxisSettings href="#ref-26"/>
+<DistanceUnits xsi:type="a8:DistanceUnitsType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">Primary</DistanceUnits>
+<TimeUnits xsi:type="a8:TimeUnitsType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">Seconds</TimeUnits>
+<ApproxmiationPrecision>0.01</ApproxmiationPrecision>
+<ApproximationMode xsi:type="a8:ApproximationMode" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">LinesAndArcs</ApproximationMode>
+<ShapeTransitionFeedrate id="ref-27">20</ShapeTransitionFeedrate>
+<BitmapMarkingFeedrate>100</BitmapMarkingFeedrate>
+<ProgramInitializationSettings href="#ref-28"/>
+<ProgramTerminationSettings href="#ref-29"/>
+<UseFeedrateDefines>true</UseFeedrateDefines>
+<PreferGCode>true</PreferGCode>
+<G16KAxisName id="ref-30">Z</G16KAxisName>
+<IncludeComments>true</IncludeComments>
+<ShouldApproximateAllSplines>true</ShouldApproximateAllSplines>
+</a1:ExportSettings>
+<a6:CatalogItemId id="ref-19" xmlns:a6="http://schemas.microsoft.com/clr/nsassem/Aerotech.Common.Internal.Cataloging/Aerotech.Common.Internal">
+<SelfId id="ref-31">706c71de-9115-4e3a-a114-cbb9ef749d1c</SelfId>
+<OwnerId id="ref-32">7e4662b1-88ec-4999-8e95-322c1ecd2657</OwnerId>
+<VersionId id="ref-33">8e0b080b-e320-4f00-8e5c-969c556bce97</VersionId>
+<LastModified id="ref-34">2026-02-03T07:22:18.6538913+08:00</LastModified>
+</a6:CatalogItemId>
+<a2:Group id="ref-24" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<Name id="ref-35">Layer 0</Name>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<Groupables href="#ref-36"/>
+</a2:Group>
+<a4:AxisSettings id="ref-25" xmlns:a4="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.AeroBasic/Aerotech.CADFusion.Core">
+<Name id="ref-37">X</Name>
+<Type xsi:type="a8:AxisType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">Linear</Type>
+<Precision>4</Precision>
+<IsInverted>false</IsInverted>
+</a4:AxisSettings>
+<a4:AxisSettings id="ref-26" xmlns:a4="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.AeroBasic/Aerotech.CADFusion.Core">
+<Name id="ref-38">Y</Name>
+<Type xsi:type="a8:AxisType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">Linear</Type>
+<Precision>4</Precision>
+<IsInverted>false</IsInverted>
+</a4:AxisSettings>
+<a4:ExternalAeroBasicReferences id="ref-28" xmlns:a4="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.AeroBasic/Aerotech.CADFusion.Core">
+<ActiveSource xsi:type="a8:AeroBasicReferenceType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">None</ActiveSource>
+<ExternalPath id="ref-39"></ExternalPath>
+<AeroBasicCode href="#ref-39"/>
+</a4:ExternalAeroBasicReferences>
+<a4:ExternalAeroBasicReferences id="ref-29" xmlns:a4="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.AeroBasic/Aerotech.CADFusion.Core">
+<ActiveSource xsi:type="a8:AeroBasicReferenceType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">None</ActiveSource>
+<ExternalPath href="#ref-39"/>
+<AeroBasicCode href="#ref-39"/>
+</a4:ExternalAeroBasicReferences>
+<SOAP-ENC:Array id="ref-36" SOAP-ENC:arrayType="a2:IGroupable[2]" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<item href="#ref-40"/>
+<item href="#ref-41"/>
+</SOAP-ENC:Array>
+<a2:Path id="ref-40" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-43"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<SubCurves href="#ref-45"/>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name id="ref-49">Shape 1</Name>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+</a2:Path>
+<a2:Path id="ref-41" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-51"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<SubCurves href="#ref-52"/>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name id="ref-53">Shape 5</Name>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+</a2:Path>
+<a9:UserData id="ref-43" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a10:Layer id="ref-44" xmlns:a10="http://schemas.microsoft.com/clr/nsassem/CADability.Attribute/CADability">
+<Name id="ref-54">Standard</Name>
+<DisplayOrder>0</DisplayOrder>
+<Transparency>0</Transparency>
+</a10:Layer>
+<SOAP-ENC:Array id="ref-45" SOAP-ENC:arrayType="a11:ICurve[4]" xmlns:a11="http://schemas.microsoft.com/clr/nsassem/CADability.GeoObject/CADability">
+<item href="#ref-55"/>
+<item href="#ref-56"/>
+<item href="#ref-57"/>
+<item href="#ref-58"/>
+</SOAP-ENC:Array>
+<a10:ColorDef id="ref-46" xmlns:a10="http://schemas.microsoft.com/clr/nsassem/CADability.Attribute/CADability">
+<Name id="ref-60">Normal</Name>
+<Source xsi:type="a10:ColorDef+ColorSource" xmlns:a10="http://schemas.microsoft.com/clr/nsassem/CADability.Attribute/CADability">fromName</Source>
+<Color xsi:type="a12:Color" xmlns:a12="http://schemas.microsoft.com/clr/nsassem/System.Drawing/System.Drawing">
+<name xsi:null="1"/>
+<value>4278218450</value>
+<knownColor>0</knownColor>
+<state>2</state>
+</Color>
+</a10:ColorDef>
+<a10:LineWidth id="ref-47" xmlns:a10="http://schemas.microsoft.com/clr/nsassem/CADability.Attribute/CADability">
+<Name id="ref-61">Thin</Name>
+<Width>0</Width>
+<Scale xsi:type="a10:LineWidth+Scaling" xmlns:a10="http://schemas.microsoft.com/clr/nsassem/CADability.Attribute/CADability">Device</Scale>
+</a10:LineWidth>
+<a10:LinePattern id="ref-48" xmlns:a10="http://schemas.microsoft.com/clr/nsassem/CADability.Attribute/CADability">
+<Name id="ref-62">Continous</Name>
+<Pattern href="#ref-63"/>
+<Scale xsi:type="a10:LinePattern+Scaling" xmlns:a10="http://schemas.microsoft.com/clr/nsassem/CADability.Attribute/CADability">Layout</Scale>
+</a10:LinePattern>
+<a8:EntityTransitionSettings id="ref-50" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">
+<Type xsi:type="a8:EntityTransitionType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">None</Type>
+</a8:EntityTransitionSettings>
+<a9:UserData id="ref-51" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<SOAP-ENC:Array id="ref-52" SOAP-ENC:arrayType="a11:ICurve[4]" xmlns:a11="http://schemas.microsoft.com/clr/nsassem/CADability.GeoObject/CADability">
+<item href="#ref-64"/>
+<item href="#ref-65"/>
+<item href="#ref-66"/>
+<item href="#ref-67"/>
+</SOAP-ENC:Array>
+<a2:Line id="ref-55" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-68"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.41000000000008185</X>
+<Y>60.110000000000127</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.41000000000008185</X>
+<Y>0.11000000000001364</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<a2:Line id="ref-56" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-71"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.41000000000008185</X>
+<Y>0.11000000000001364</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.1099999999999568</X>
+<Y>0.11000000000001364</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<a2:Line id="ref-57" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-72"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.1099999999999568</X>
+<Y>0.11000000000001364</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.1099999999999568</X>
+<Y>60.110000000000127</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<a2:Line id="ref-58" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-73"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.1099999999999568</X>
+<Y>60.110000000000127</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.41000000000008185</X>
+<Y>60.110000000000127</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<SOAP-ENC:Array id="ref-63" SOAP-ENC:arrayType="xsd:double[0]">
+</SOAP-ENC:Array>
+<a2:Line id="ref-64" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-74"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.5200000000000955</X>
+<Y>60.220000000000141</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.5200000000000955</X>
+<Y>0</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<a2:Line id="ref-65" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-75"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.5200000000000955</X>
+<Y>0</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0</X>
+<Y>0</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<a2:Line id="ref-66" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-76"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0</X>
+<Y>0</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0</X>
+<Y>60.220000000000141</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<a2:Line id="ref-67" xmlns:a2="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion.Shapes/Aerotech.CADFusion.Shapes">
+<UserData href="#ref-77"/>
+<Layer href="#ref-44"/>
+<Style xsi:type="xsd:anyType" xsi:null="1"/>
+<UserAttributes xsi:type="xsd:anyType" xsi:null="1"/>
+<Actuator xsi:type="xsd:anyType" xsi:null="1"/>
+<StartPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0</X>
+<Y>60.220000000000141</Y>
+<Z>0</Z>
+</StartPoint>
+<EndPoint xsi:type="a9:GeoPoint" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+<X>0.5200000000000955</X>
+<Y>60.220000000000141</Y>
+<Z>0</Z>
+</EndPoint>
+<ColorDef href="#ref-46"/>
+<LineWidth href="#ref-47"/>
+<LinePattern href="#ref-48"/>
+<Name xsi:type="xsd:anyType" xsi:null="1"/>
+<ToolSettings xsi:null="1"/>
+<TransitionSettings xsi:type="xsd:anyType" xsi:null="1"/>
+<Feedrate xsi:type="xsd:anyType" xsi:null="1"/>
+<Repeat>1</Repeat>
+<ShouldGenerateAeroBasic>true</ShouldGenerateAeroBasic>
+<EntityTransitionSettings href="#ref-50"/>
+<LeadInSettings href="#ref-69"/>
+<LeadOutSettings href="#ref-69"/>
+<ShapeStartOutputs href="#ref-70"/>
+<ShapeEndOutputs href="#ref-70"/>
+<EntityStartOutputs href="#ref-70"/>
+<EntityEndOutputs href="#ref-70"/>
+</a2:Line>
+<a9:UserData id="ref-68" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a8:LeadMoveSettings id="ref-69" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">
+<Type xsi:type="a8:LeadMoveType" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">None</Type>
+</a8:LeadMoveSettings>
+<a8:OutputSettingsCollection id="ref-70" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">
+<Outputs href="#ref-78"/>
+</a8:OutputSettingsCollection>
+<a9:UserData id="ref-71" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a9:UserData id="ref-72" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a9:UserData id="ref-73" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a9:UserData id="ref-74" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a9:UserData id="ref-75" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a9:UserData id="ref-76" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<a9:UserData id="ref-77" xmlns:a9="http://schemas.microsoft.com/clr/nsassem/CADability/CADability">
+</a9:UserData>
+<SOAP-ENC:Array id="ref-78" SOAP-ENC:arrayType="a8:OutputSettings[0]" xmlns:a8="http://schemas.microsoft.com/clr/nsassem/Aerotech.CADFusion/Aerotech.CADFusion.Core">
+</SOAP-ENC:Array>
+</SOAP-ENV:Body>
+</SOAP-ENV:Envelope>
+</Data>
+</ProjectFile>

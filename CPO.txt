@@ -1,0 +1,71 @@
+CPO
+SiPh
+OE
+EIC
+PIC
+Bandwidth (BW)
+dB
+HBM
+WDM
+MRM
+
+MZM
+GC
+EC
+PD
+COUPE
+TDV
+TSV
+WG
+CoWoS
+PDK
+L/S
+FOCoS
+FOCoS-B
+RDL
+C4 bump
+Scale-Out
+Scale-Up
+Pluggable Optics
+LPO
+
+Photonic Chiplet Integration
+In-package Optical I/O
+各技術應用場景
+CPC
+NPC
+CPC
+NPO
+Chiplet
+FAU
+Symbol rate
+VCSEL
+
+
+KGD
+
+
+KGOE
+FOPOP
+SSC
+SMF
+NEFF
+VNA
+TE/TM/TEM
+
+
+
+
+SoIC
+TCO
+UCIe
+HVM
+FLOPs
+TMI
+
+
+
+
+
+
+
