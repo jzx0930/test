@@ -1,0 +1,817 @@
+' 2026/6/9 上午 09:49:22
+#define CoordinatedMotionTransitionFeedrate 20
+#define ShapeFeedrate 10
+
+program
+
+G90
+G71
+G76
+
+G16 X Y Z
+G17
+
+' Root Group
+
+' Layer 0
+
+' Shape 21
+' keep shooting (Initialization)
+//流程開始時執行一次的程式碼
+#define ShapeFeedrate 30
+#define CoordinatedMotionTransitionFeedrate 30
+
+#define X_Start 185    			//設定X加工起點
+#define Y_Start 90      		//設定Y加工起點
+#define PulseCount 1    		//設定PSO到位觸發後產生幾個週期(高電為訊號)
+#define PulseTime 1.8   		//單位:us  OnTime & TotalTime 最小值為0.04us(精確度為0.04us) 最大值為42.9s(最大值依據驅動器不同而不同;GL4與XC4e系列皆為42.9s)
+#define DistanceThreshold 0.002 //單位:mm 。XY平台最小解析度為0.1um
+
+var $numberOfSteps as integer   //宣告變數-迴圈次數
+var $currentStep as integer     //宣告變數-當前執行第幾次
+$numberOfSteps=1                //設定迴圈次數
+
+// -------------------------
+//  X/Y 軸基本設定
+// -------------------------
+SetupAxisRampType([X,Y],RampType.Sine) //設定加速度的模式
+SetupAxisRampValue([X,Y],RampMode.Rate,200/1.57)	//G0加速度(units/sec²)。
+//SetupAxisRampValue([X,Y],RampMode.Rate,100000/1.57)   // 正方形
+SetupAxisSpeed([X,Y],[20,20])
+
+SetupCoordinatedRampType(RampType.Sine)
+SetupCoordinatedRampValue(RampMode.Rate,200/1.57)	//G1加速度(units/sec²)。
+//SetupCoordinatedRampValue(RampMode.Rate,ShapeFeedrate*1/1.57)//正方形
+SetupCoordinatedSpeed(ShapeFeedrate)
+
+SetupTaskDistanceUnits(DistanceUnits.Primary)
+SetupTaskTimeUnits(TimeUnits.Seconds)
+SetupTaskTargetMode(TargetMode.Absolute)
+SetupTaskWaitMode(WaitMode.MotionDone)
+
+// -------------------------
+//  Encoder Echo（X/Y → GX）
+// -------------------------
+var $outputDivider as integer = 1
+
+DriveEncoderOutputConfigureDirection(X,EncoderOutputChannel.SyncPortA,0)
+DriveEncoderOutputConfigureDivider(X,EncoderOutputChannel.SyncPortA,$outputDivider)
+DriveEncoderOutputConfigureInput(X,EncoderOutputChannel.SyncPortA,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(X,EncoderOutputChannel.SyncPortA,EncoderOutputMode.Default)
+
+DriveEncoderOutputConfigureDirection(Y,EncoderOutputChannel.SyncPortB,0)
+DriveEncoderOutputConfigureDivider(Y,EncoderOutputChannel.SyncPortB,$outputDivider)
+DriveEncoderOutputConfigureInput(Y,EncoderOutputChannel.SyncPortB,EncoderInputChannel.PrimaryEncoder)
+DriveEncoderOutputOn(Y,EncoderOutputChannel.SyncPortB,EncoderOutputMode.Default)
+
+
+// -------------------------
+//  PSO 設定
+// -------------------------
+PsoReset(GX)
+
+// 依距離觸發
+PsoDistanceConfigureCounterReset(GX,PsoDistanceCounterResetMask.ResetWhenOutputOff)
+PsoDistanceConfigureInputs(GX,[PsoDistanceInput.GL4SyncPortB,PsoDistanceInput.GL4SyncPortA])
+PsoDistanceConfigureFixedDistance(GX,Trunc(UnitsToCounts(GX,DistanceThreshold)/ParameterGetAxisValue(GX,AxisParameter.PrimaryEmulatedQuadratureDivider)))//單位mm 移動1000um =1mm  500um=0.5mm  0.05mm=50um 0.002mm=2um
+
+
+// 脈衝波型
+/*The time in microseconds
+雷射重複頻率=400kHz
+=1/400000=0.0000025s=2.5us(得出2.5us=1發)
+所以100us=40發
+*/
+PsoWaveformConfigureMode(GX,PsoWaveformMode.Pulse)
+PsoWaveformConfigurePulseFixedCount(GX, PulseCount)
+PsoWaveformConfigurePulseFixedOnTime(GX, PulseTime) //每一個脈衝的高電位時間 1s=1000ms=1000000us
+PsoWaveformConfigurePulseFixedTotalTime(GX, PulseTime)
+PsoWaveformApplyPulseConfiguration(GX)
+PsoWaveformOn(GX)
+
+// 實體輸出腳位
+PsoOutputConfigureOutput(GX,PsoOutputPin.GL4LaserOutput0)
+PsoOutputConfigureSource(GX,PsoOutputSource.Waveform)
+
+//VelocityBlendingOff()
+//VelocityBlendingOn()
+// -------------------------
+//  運動
+// -------------------------
+//AppDataCollectionStop()蒐集資料
+//AppDataCollectionSnapshot()
+//----------------
+
+//以下為加工路徑運行
+for $currentStep = 1 to $numberOfSteps
+	G82
+	
+	PsoDistanceCounterOff(GX)
+	PsoDistanceEventsOff(GX)
+	MoveLinear([X,Y],[X_Start,Y_Start],300)
+	
+	G92 X0 Y0     ; 將目前位置設定為 (0,0)
+	G0 X -0.3174 Y 0.0203
+	F ShapeFeedrate
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 0.0066 Y 0.3268 I 0.3290 J -0.0233
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 2
+	G0 X 0.0166 Y 0.3268
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 0.2525 Y 0.2223 I -0.0050 J -0.3298
+	G1 X 1.5066 Y 0.2221
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 37
+	G0 X 1.5166 Y 0.2221
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 3.0066 Y 0.2219
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 34
+	G0 X 3.0166 Y 0.2219
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 4.2649 Y 0.2217
+	G1 X 4.4077 Y 0.2175
+	G1 X 4.5066 Y 0.2102
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 33
+	G0 X 4.5166 Y 0.2095
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 4.6919 Y 0.1965
+	G2 X 4.6992 Y 0.1958 I -0.0189 J -0.2155
+	G1 X 4.8396 Y 0.1790
+	G1 X 5.1133 Y 0.1339
+	G2 X 5.1203 Y 0.1326 I -0.0379 J -0.2126
+	G1 X 5.2591 Y 0.1032
+	G1 X 5.5343 Y 0.0321
+	G1 X 5.7974 Y -0.0528
+	G2 X 5.8040 Y -0.0551 I -0.0683 J -0.2044
+	G1 X 5.9376 Y -0.1046
+	G2 X 5.9581 Y -0.1127 I -1.7413 J -4.4670
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 30
+	G0 X 5.9674 Y -0.1163
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 6.4535 Y -0.3418 I -1.7710 J -4.4552
+	G1 X 6.5780 Y -0.4105
+	G1 X 6.7014 Y -0.4835
+	G1 X 6.9378 Y -0.6380
+	G1 X 7.0536 Y -0.7213
+	G1 X 7.2632 Y -0.8864
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 29
+	G0 X 7.2711 Y -0.8926
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 7.2770 Y -0.8972
+	G1 X 7.3846 Y -0.9901
+	G1 X 7.4888 Y -1.0857
+	G1 X 7.6702 Y -1.2625
+	G3 X 8.1127 Y -1.6443 I 3.8296 J 3.9902
+	G1 X 8.3483 Y -1.8172
+	G1 X 8.4519 Y -1.8851
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 26
+	G0 X 8.4602 Y -1.8906
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 8.5929 Y -1.9776
+	G1 X 8.7179 Y -2.0526
+	G1 X 8.9747 Y -2.1930
+	G1 X 9.1055 Y -2.2581
+	G1 X 9.3719 Y -2.3777
+	G1 X 9.6447 Y -2.4831
+	G1 X 9.9222 Y -2.5741
+	G1 X 9.9639 Y -2.5859
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 24
+	G0 X 9.9736 Y -2.5886
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 10.0620 Y -2.6136
+	G3 X 10.7778 Y -2.7572 I 1.4285 J 5.2661
+	G3 X 11.3614 Y -2.8037 I 0.7335 J 5.5252
+	G1 X 11.6436 Y -2.8037
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 23
+	G0 X 11.6536 Y -2.8037
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 13.1436 Y -2.8039
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 69
+	G0 X 13.1536 Y -2.8039
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 14.6436 Y -2.8041
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 11
+	G0 X 14.6536 Y -2.8041
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 16.1436 Y -2.8042
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 67
+	G0 X 16.1536 Y -2.8042
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 17.6436 Y -2.8044
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 65
+	G0 X 17.6536 Y -2.8044
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 19.1436 Y -2.8046
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 63
+	G0 X 19.1536 Y -2.8046
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 20.6436 Y -2.8048
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 3
+	G0 X 20.6536 Y -2.8048
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 21.4170 Y -2.8049
+	G1 X 21.5730 Y -2.8012
+	G1 X 21.7268 Y -2.7934
+	G3 X 22.2269 Y -2.7420 I -0.3881 J 6.2323
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 59
+	G0 X 22.2368 Y -2.7405
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G3 X 22.6498 Y -2.6663 I -0.8981 J 6.1794
+	G1 X 22.9514 Y -2.5935
+	G1 X 23.2491 Y -2.5056
+	G1 X 23.5423 Y -2.4032
+	G1 X 23.6944 Y -2.3413
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 57
+	G0 X 23.7037 Y -2.3375
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 23.8298 Y -2.2862
+	G1 X 24.1112 Y -2.1548
+	G1 X 24.2492 Y -2.0842
+	G1 X 24.5200 Y -1.9322
+	G1 X 24.7829 Y -1.7672
+	G1 X 25.0370 Y -1.5890
+	G3 X 25.0474 Y -1.5812 I -3.6673 J 4.9739
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 55
+	G0 X 25.0555 Y -1.5753
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G3 X 25.7429 Y -0.9813 I -3.6858 J 4.9602
+	G1 X 26.0509 Y -0.6732
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 54
+	G0 X 26.0580 Y -0.6662
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 27.1116 Y 0.3874
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 51
+	G0 X 27.1187 Y 0.3945
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 28.1722 Y 1.4481
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 50
+	G0 X 28.1793 Y 1.4552
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 29.2329 Y 2.5087
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 9
+	G0 X 29.2400 Y 2.5158
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 29.3041 Y 2.5799
+	G1 X 29.3089 Y 2.5848
+	G1 X 29.3140 Y 2.5898
+	G1 X 29.6451 Y 2.9210
+	G1 X 30.2936 Y 3.5694
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 4
+	G0 X 30.3006 Y 3.5765
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 31.0158 Y 4.2917
+	G1 X 31.1824 Y 4.4693
+	G1 X 31.2597 Y 4.5604
+	G3 X 31.3327 Y 4.6516 I -2.9633 J 2.4459
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 43
+	G0 X 31.3388 Y 4.6596
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G3 X 31.6663 Y 5.1604 I -3.0425 J 2.3468
+	G3 X 31.9769 Y 5.9026 I -3.4299 J 1.8715
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 41
+	G0 X 31.9798 Y 5.9122
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G3 X 32.0944 Y 6.4138 I -3.7435 J 1.1197
+	G1 X 32.1246 Y 6.6537
+	G1 X 32.1397 Y 6.8949
+	G1 X 32.1401 Y 7.1983
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 39
+	G0 X 32.1401 Y 7.2083
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 32.1414 Y 8.1456
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 38
+	G0 X 32.1415 Y 8.1556
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 32.3633 Y 8.3759 I 0.2252 J -0.0050
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 12
+	G0 X 32.3681 Y 8.3759
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 32.5918 Y 8.1556 I -0.0015 J -0.2252
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 5
+	G0 X 32.5919 Y 8.1456
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 32.5904 Y 7.2083
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 40
+	G0 X 32.5904 Y 7.1983
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 32.5899 Y 6.8758
+	G1 X 32.5735 Y 6.6149
+	G2 X 32.5727 Y 6.6067 I -0.2173 J 0.0162
+	G1 X 32.5388 Y 6.3394
+	G1 X 32.4895 Y 6.0813
+	G2 X 32.4880 Y 6.0742 I -0.2118 J 0.0433
+	G1 X 32.4565 Y 5.9429
+	G2 X 32.4044 Y 5.7593 I -4.3011 J 1.1202
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 42
+	G0 X 32.4015 Y 5.7497
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 32.1229 Y 5.0599 I -4.2461 J 1.3134
+	G1 X 31.9928 Y 4.8234
+	G1 X 31.9267 Y 4.7150
+	G2 X 31.6597 Y 4.3387 I -3.6928 J 2.3372
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 44
+	G0 X 31.6535 Y 4.3308
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 31.5181 Y 4.1688 I -3.4196 J 2.7214
+	G1 X 31.3385 Y 3.9773
+	G2 X 31.3356 Y 3.9743 I -0.1444 J 0.1386
+	G1 X 30.6190 Y 3.2581
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 8
+	G0 X 30.6120 Y 3.2510
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 29.6448 Y 2.2844
+	G1 X 29.6215 Y 2.2611
+	G1 X 29.6170 Y 2.2566
+	G1 X 29.6127 Y 2.2522
+	G1 X 29.5581 Y 2.1977
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 48
+	G0 X 29.5510 Y 2.1906
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 28.4972 Y 1.1373
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 49
+	G0 X 28.4901 Y 1.1302
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 27.4362 Y 0.0769
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 52
+	G0 X 27.4292 Y 0.0699
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 26.3753 Y -0.9835
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 6
+	G0 X 26.3682 Y -0.9905
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 25.9391 Y -1.4194
+	G1 X 25.6964 Y -1.6388
+	G2 X 25.6917 Y -1.6429 I -0.1410 J 0.1598
+	G1 X 25.4391 Y -1.8496
+	G2 X 25.4339 Y -1.8537 I -0.1338 J 0.1675
+	G1 X 25.3068 Y -1.9473
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 56
+	G0 X 25.2988 Y -1.9533
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 25.1664 Y -2.0509
+	G1 X 25.0290 Y -2.1445
+	G1 X 24.8939 Y -2.2317
+	G2 X 24.3083 Y -2.5599 I -3.5159 J 5.5851
+	G1 X 24.0119 Y -2.6983
+	G2 X 24.0059 Y -2.7009 I -0.0881 J 0.1950
+	G1 X 23.8629 Y -2.7590
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 58
+	G0 X 23.8536 Y -2.7628
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 23.6985 Y -2.8258
+	G1 X 23.3894 Y -2.9338
+	G2 X 23.3835 Y -2.9357 I -0.0680 J 0.2017
+	G1 X 23.0639 Y -3.0297
+	G1 X 22.7466 Y -3.1063
+	G2 X 22.7407 Y -3.1075 I -0.0472 J 0.2066
+	G1 X 22.4195 Y -3.1682
+	G2 X 22.4132 Y -3.1692 I -0.0372 J 0.2100
+	G1 X 22.3148 Y -3.1827
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 60
+	G0 X 22.3049 Y -3.1841
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 22.0842 Y -3.2144
+	G1 X 21.9187 Y -3.2309
+	G1 X 21.5861 Y -3.2515
+	G1 X 21.4215 Y -3.2554
+	G1 X 20.6536 Y -3.2553
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 62
+	G0 X 20.6436 Y -3.2553
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 19.1536 Y -3.2551
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 64
+	G0 X 19.1436 Y -3.2551
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 17.6536 Y -3.2548
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 66
+	G0 X 17.6436 Y -3.2548
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 16.1536 Y -3.2546
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 68
+	G0 X 16.1436 Y -3.2546
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 14.6536 Y -3.2544
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 10
+	G0 X 14.6436 Y -3.2544
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 13.1536 Y -3.2542
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 70
+	G0 X 13.1436 Y -3.2542
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 11.6536 Y -3.2540
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 7
+	G0 X 11.6436 Y -3.2540
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 11.3455 Y -3.2539
+	G1 X 11.1880 Y -3.2476
+	G1 X 11.0361 Y -3.2374
+	G2 X 10.0948 Y -3.0872 I 0.4704 J 5.9747
+	G1 X 9.8110 Y -3.0105
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 25
+	G0 X 9.8013 Y -3.0078
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 9.7896 Y -3.0047
+	G1 X 9.6391 Y -2.9575
+	G1 X 9.4892 Y -2.9060
+	G1 X 9.1951 Y -2.7921
+	G1 X 8.9129 Y -2.6655
+	G2 X 8.9071 Y -2.6627 I 0.0893 J 0.1941
+	G1 X 8.6311 Y -2.5207
+	G2 X 8.6261 Y -2.5180 I 0.0986 J 0.1860
+	G1 X 8.4937 Y -2.4433
+	G2 X 8.1950 Y -2.2576 I 2.9949 J 5.1487
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 27
+	G0 X 8.1867 Y -2.2521
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X 7.9602 Y -2.0935 I 3.3018 J 4.9574
+	G1 X 7.8333 Y -1.9978
+	G1 X 7.7154 Y -1.9038
+	G2 X 7.2718 Y -1.5030 I 3.7679 J 4.6152
+	G3 X 7.0202 Y -1.2703 I -3.0892 J -3.0884
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 28
+	G0 X 7.0125 Y -1.2637
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G3 X 6.6775 Y -1.0057 I -2.8299 J -3.3277
+	G1 X 6.4620 Y -0.8652
+	G1 X 6.2385 Y -0.7377
+	G1 X 6.0080 Y -0.6236
+	G1 X 5.8181 Y -0.5432
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 31
+	G0 X 5.8089 Y -0.5393
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 5.7707 Y -0.5231
+	G1 X 5.5279 Y -0.4372
+	G1 X 5.4050 Y -0.3995
+	G1 X 5.1554 Y -0.3353
+	G1 X 5.0311 Y -0.3091
+	G3 X 4.5199 Y -0.2406 I -0.8318 J -4.2655
+	G1 X 4.5166 Y -0.2404
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 32
+	G0 X 4.5066 Y -0.2398
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 4.3830 Y -0.2323
+	G1 X 4.1963 Y -0.2282
+	G1 X 3.0166 Y -0.2282
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 35
+	G0 X 3.0066 Y -0.2282
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 1.5166 Y -0.2282
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 20
+	G0 X 1.5066 Y -0.2282
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G1 X 0.2525 Y -0.2282
+	G2 X 0.0166 Y -0.3327 I -0.2409 J 0.2253
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' Shape 1
+	G0 X 0.0066 Y -0.3327
+	' keep shooting (On)
+	//Keep On
+	PsoOutputOn(GX)
+	G2 X -0.3179 Y 0.0105 I 0.0050 J 0.3298
+	' keep shooting (Off)
+	//Keep Off
+	PsoOutputOff(GX)
+	
+	' keep shooting (Teardown)
+end
+
+G82   ; 清除 G92所設定的偏移
+//AppDataCollectionStop()//蒐集數據結束
+PsoWaveformOff(GX)
+PsoDistanceEventsOff(GX)
+PsoDistanceCounterOff(GX)
+
+//VelocityBlendingOff()
+
+SetupTaskTargetMode(TargetMode.Absolute)
+MoveLinear([X,Y],[150,0],100)//出料位置
+
+end
