@@ -1,0 +1,7 @@
+//PSO On
+PsoOutputConfigureSource(GX, PsoOutputSource.Waveform)
+PsoWaveformOn(GX)
+PsoDistanceCounterOn(GX)
+PsoDistanceEventsOn(GX)
+//Triggered once before moving
+//PsoEventGenerateSingle(GX)

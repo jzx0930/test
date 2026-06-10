@@ -1,0 +1,12 @@
+end
+
+G82   ; 清除 G92所設定的偏移
+//AppDataCollectionStop()//蒐集數據結束
+PsoWaveformOff(GX)
+PsoDistanceEventsOff(GX)
+PsoDistanceCounterOff(GX)
+
+//VelocityBlendingOff()
+
+SetupTaskTargetMode(TargetMode.Absolute)
+MoveLinear([X,Y],[150,0],100)//出料位置
